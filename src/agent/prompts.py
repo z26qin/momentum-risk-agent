@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Mapping, Sequence
+from typing import Any, Sequence
 
 from src.agent.models import TOOL_NAMES, ToolObservation
 from src.agent.state import AgentState
@@ -22,7 +22,7 @@ Return a single JSON object with exactly these keys:
   final_assessment: string or null
   open_questions: array of strings
 
-Allowed tool names:
+Allowed tool names (the executor allowlist is authoritative):
   get_book_state, get_factor_state, get_cluster_exposure, compare_prior_state,
   search_news, search_positioning, search_filings, inspect_name
 
@@ -44,77 +44,24 @@ When action is finish or escalate, tool_calls must be [].
 When action is call_tools, include one to four tool calls with explicit args.
 search_* tools require {"query": "..."}.
 inspect_name requires {"symbol": "TICKER"}.
-"""
-
-CROWDING_PLANNER_SYSTEM = """\
-You are the Khandani–Lo crowding monitor for Momentum-Risk-Agent.
-
-The deterministic monitor has already computed the risk state. You investigate
-ONE question: is pressure a localized crowded unwind, or forced deleveraging?
-
-You do not investigate recovery-crash setups. You do not change the risk state.
-
-Return a single JSON object with exactly these keys:
-  action: call_tools | finish | escalate
-  hypothesis: string
-  reason: string
-  tool_calls: array of {id, name, args}
-  final_assessment: string or null
-  open_questions: array of strings
-
-Allowed tool names (subset):
-  get_cluster_exposure, search_positioning, search_news, inspect_name, get_book_state
-
-Rules (the executor will enforce these even if you ignore them):
-- Do not recalculate metrics, thresholds, triggers, or crash scores.
-- Do not recommend or execute a trade, hedge, or de-gross.
-- Do not treat missing evidence as present.
-- Do not use information published after the assessment cutoff.
-- Localized theme reduction is not proof of forced deleveraging.
-- Prefer a small parallel batch of independent reads.
-- Stop when crowding evidence is sufficient, contradicted, or unresolvable.
-
-When action is finish or escalate, tool_calls must be [].
-When action is call_tools, include one to four tool calls with explicit args.
-search_* tools require {"query": "..."}.
-inspect_name requires {"symbol": "TICKER"}.
-"""
-
-RECOVERY_PLANNER_SYSTEM = """\
-You are the Daniel–Moskowitz recovery monitor for Momentum-Risk-Agent.
-
-The deterministic monitor has already computed the risk state. You investigate
-ONE question: is this a recovery-driven loser rebound / short-leg crash setup?
-
-You do not investigate crowding or forced deleveraging. You do not change the
-risk state. Monitoring severity is a relative band, never a crash score.
-
-Return a single JSON object with exactly these keys:
-  action: call_tools | finish | escalate
-  hypothesis: string
-  reason: string
-  tool_calls: array of {id, name, args}
-  final_assessment: string or null
-  open_questions: array of strings
-
-Allowed tool names (subset):
-  get_factor_state, get_book_state, search_news, compare_prior_state
-
-Rules (the executor will enforce these even if you ignore them):
-- Do not recalculate metrics, thresholds, triggers, or crash scores.
-- Do not recommend or execute a trade, hedge, or de-gross.
-- Do not treat missing evidence as present.
-- Do not use information published after the assessment cutoff.
-- Prefer a small parallel batch of independent reads.
-- Stop when recovery evidence is sufficient, contradicted, or unresolvable.
-- If you show factor state, score_is_probability is always false.
-
-When action is finish or escalate, tool_calls must be [].
-When action is call_tools, include one to four tool calls with explicit args.
-search_* tools require {"query": "..."}.
 compare_prior_state accepts {"prior_date": "YYYY-MM-DD"} or {}.
 """
 
+FOCUS_ADDENDA = {
+    "kl_crowding": (
+        "Focus: Khandani–Lo crowding only. Question: is pressure a localized "
+        "crowded unwind, or forced deleveraging? Use only get_cluster_exposure, "
+        "search_positioning, search_news, inspect_name, get_book_state. Do not "
+        "investigate recovery. Localized theme reduction is not proof of forced "
+        "deleveraging."
+    ),
+    "dm_recovery": (
+        "Focus: Daniel–Moskowitz recovery only. Question: is this a "
+        "recovery-driven loser rebound / short-leg crash setup? Use only "
+        "get_factor_state, get_book_state, search_news, compare_prior_state. "
+        "Do not investigate crowding. score_is_probability is always false."
+    ),
+}
 
 COMPACT_RISK_KEYS = (
     "as_of_date",
@@ -138,11 +85,8 @@ COMPACT_RISK_KEYS = (
 
 
 def planner_system_prompt(focus: str | None = None) -> str:
-    if focus == "kl_crowding":
-        return CROWDING_PLANNER_SYSTEM
-    if focus == "dm_recovery":
-        return RECOVERY_PLANNER_SYSTEM
-    return PLANNER_SYSTEM
+    extra = FOCUS_ADDENDA.get(focus or "")
+    return PLANNER_SYSTEM if not extra else PLANNER_SYSTEM + "\n" + extra
 
 
 def compact_planner_view(

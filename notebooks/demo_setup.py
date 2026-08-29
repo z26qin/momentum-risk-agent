@@ -53,14 +53,14 @@ else:
 
 
 def run_investigation_demo(mvp_result, max_steps=4, verbose=True):
-    """Run the hand-written investigation loop on an already-computed MVP result.
+    """Run the orchestrated investigation on an already-computed MVP result.
 
     The agent cannot change triggers, thresholds, scores, or the PM book.
     """
 
-    from src.agent import run_investigation_agent
+    from src.agent import run_orchestrated_investigation
 
-    return run_investigation_agent(
+    return run_orchestrated_investigation(
         as_of_date=CONFIG.as_of_date,
         max_steps=max_steps,
         verbose=verbose,

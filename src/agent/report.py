@@ -119,6 +119,75 @@ def build_pm_note(state: AgentState) -> str:
     )
 
 
+MECHANISM_NOTE_LABELS = {
+    "crowding": "Crowding (Khandani–Lo)",
+    "recovery": "Recovery (Daniel–Moskowitz)",
+}
+
+
+def build_combined_pm_note(
+    *,
+    risk_state: Mapping[str, Any],
+    spawned: Sequence[str],
+    specialist_results: Mapping[str, Any],
+    stop_reason: str,
+) -> tuple[str, dict[str, Any]]:
+    """One PM note from specialist states. Never dump buckets twice or average scores."""
+
+    mechanism_buckets = {
+        name: calibrated_buckets(specialist_results[name].state)
+        for name in spawned
+        if name in specialist_results
+    }
+    prefix = len(spawned) > 1
+    snapshot = snapshot_observed(risk_state)
+    observed = list(dict.fromkeys(snapshot))
+    inferred: list[str] = []
+    against: list[str] = []
+    not_confirmed: list[str] = []
+    snapshot_set = set(snapshot)
+    for name in spawned:
+        buckets = mechanism_buckets.get(name)
+        if not buckets:
+            continue
+        label = MECHANISM_NOTE_LABELS[name] if prefix else None
+        observed.extend(_label([item for item in buckets["observed"] if item not in snapshot_set], label))
+        inferred.extend(_label(buckets["inferred"], label))
+        against.extend(_label(buckets["contradicted"], label))
+        not_confirmed.extend(_label(buckets["not_confirmed"], label))
+
+    observed = _clean_lines(observed) or ["No additional observations beyond the snapshot."]
+    inferred = _clean_lines(inferred) or ["No additional inference beyond the deterministic snapshot."]
+    against = _clean_lines(against) or ["None"]
+    not_confirmed = _clean_lines(not_confirmed) or ["None"]
+    current_read = _combined_current_read(stop_reason, spawned, mechanism_buckets)
+    what_changed = _combined_what_changed(risk_state, spawned, mechanism_buckets)
+    next_check = _combined_next_check(risk_state, spawned, mechanism_buckets)
+    path = _combined_path(spawned, specialist_results, stop_reason)
+    report = (
+        f"Current read\n{current_read}\n\n"
+        f"Observed:\n{_bullets(observed)}\n\n"
+        f"Inferred:\n{_bullets(inferred)}\n\n"
+        f"Against:\n{_bullets(against)}\n\n"
+        f"Not confirmed:\n{_bullets(not_confirmed)}\n\n"
+        f"Investigation path:\n{path}\n\n"
+        f"What changed:\n{what_changed}\n\n"
+        f"Next useful check:\n{next_check}\n"
+    )
+    return report, {
+        "observed": observed,
+        "inferred": inferred,
+        "contradicted": against,
+        "not_confirmed": not_confirmed,
+        "current_read": current_read,
+        "what_changed": what_changed,
+        "next_useful_check": next_check,
+        "score_is_probability": False,
+        "spawned": list(spawned),
+        "mechanisms": mechanism_buckets,
+    }
+
+
 def _bullets(items: Sequence[str]) -> str:
     return "\n".join(f"- {item}" for item in items) if items else "- None"
 
@@ -257,3 +326,106 @@ def _against_from_tool(item: ToolObservation) -> list[str]:
     if item.name == "search_positioning" and not documents:
         return ["No bundled positioning note confirmed forced deleveraging"]
     return []
+
+
+def _label(items: Sequence[str], label: str | None) -> list[str]:
+    prefix = f"[{label}] " if label else ""
+    return [f"{prefix}{item}" for item in items if str(item).strip()]
+
+
+def _clean_lines(items: Sequence[str]) -> list[str]:
+    cleaned: list[str] = []
+    for item in items:
+        text = sanitize_text(item)
+        if not text:
+            if contains_forbidden(item):
+                cleaned.append("Model proposed forbidden action language; that text was dropped.")
+            continue
+        cleaned.append(text)
+    return list(dict.fromkeys(cleaned))
+
+
+def _combined_current_read(
+    stop_reason: str,
+    spawned: Sequence[str],
+    buckets: Mapping[str, Mapping[str, Any]],
+) -> str:
+    if stop_reason == "NO_INVESTIGATION_NEEDED" or not spawned:
+        return (
+            "The deterministic state does not justify additional evidence search. "
+            "Continue ordinary monitoring."
+        )
+    if len(spawned) == 1:
+        text = sanitize_text(str((buckets.get(spawned[0]) or {}).get("current_read") or ""))
+        if text:
+            return text
+    if len(spawned) > 1:
+        return (
+            "Crowding and recovery were investigated separately. "
+            "Findings are listed by mechanism and are not combined into one score. "
+            "This is not a trade instruction."
+        )
+    return "Investigation stopped with remaining uncertainty. The quantitative state is unchanged."
+
+
+def _combined_what_changed(
+    risk_state: Mapping[str, Any],
+    spawned: Sequence[str],
+    buckets: Mapping[str, Mapping[str, Any]],
+) -> str:
+    for name in ("recovery", "crowding"):
+        if name not in spawned:
+            continue
+        text = str((buckets.get(name) or {}).get("what_changed") or "").strip()
+        if text and "No prior-date comparison" not in text:
+            return text
+    compare_to = risk_state.get("compare_to_date")
+    if compare_to:
+        return (
+            f"Deterministic snapshot already compared with {compare_to}; "
+            "this investigation did not recompute that delta."
+        )
+    return "No prior-date comparison was loaded for this investigation."
+
+
+def _combined_next_check(
+    risk_state: Mapping[str, Any],
+    spawned: Sequence[str],
+    buckets: Mapping[str, Mapping[str, Any]],
+) -> str:
+    for name in spawned:
+        text = str((buckets.get(name) or {}).get("next_useful_check") or "").strip()
+        if text:
+            return text
+    checks = list(risk_state.get("next_checks") or [])
+    return str(checks[0]) if checks else (
+        "Continue ordinary monitoring of breadth, liquidity, and the concentrated names."
+    )
+
+
+def _combined_path(
+    spawned: Sequence[str],
+    results: Mapping[str, Any],
+    stop_reason: str,
+) -> str:
+    if not spawned:
+        return f"1. Orchestrator: no specialists spawned\n2. STOP: {stop_reason}"
+    lines = [f"1. Orchestrator spawned: {', '.join(spawned)}"]
+    step = 1
+    for name in spawned:
+        result = results.get(name)
+        if result is None:
+            step += 1
+            lines.append(f"{step}. [{name}] skipped")
+            continue
+        for decision in result.state.decisions:
+            step += 1
+            tools = [call.name for call in decision.tool_calls] if decision.action == "call_tools" else []
+            if tools:
+                lines.append(f"{step}. [{name}] {decision.hypothesis} · tools={tools}")
+            else:
+                lines.append(f"{step}. [{name}] {decision.action.upper()} ({decision.reason})")
+        step += 1
+        lines.append(f"{step}. [{name}] STOP: {result.stop_reason}")
+    lines.append(f"{len(lines)+1}. Combined STOP: {stop_reason}")
+    return "\n".join(lines)

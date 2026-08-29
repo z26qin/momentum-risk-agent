@@ -2,21 +2,11 @@
 
 Default path: code orchestrator + two mechanism specialists.
 
-Example:
-
-    uv run python scripts/run_agent.py \\
-      --as-of-date 2026-05-29 \\
-      --verbose --planner heuristic
+    uv run python scripts/run_agent.py --as-of-date 2026-05-29 --verbose --planner heuristic
 
 Quiet control (no specialists):
 
-    uv run python scripts/run_agent.py \\
-      --as-of-date 2024-01-05 \\
-      --verbose --planner heuristic
-
-Single-planner compatibility loop:
-
-    uv run python scripts/run_agent.py --mode single --as-of-date 2026-05-29
+    uv run python scripts/run_agent.py --as-of-date 2024-01-05 --verbose --planner heuristic
 """
 
 from __future__ import annotations

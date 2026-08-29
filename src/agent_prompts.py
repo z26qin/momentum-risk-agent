@@ -106,10 +106,14 @@ def active_flags(risk: Mapping[str, Any]) -> set[str]:
 
 
 def crowding_signal_present(state: Any) -> bool:
+    """True only when crowding flags fired.
+
+    ``primary_driver`` is a relative-score label, not a routing input. Quiet
+    compact assessments can still say ``crowded_unwind`` while triggers are 0.
+    """
+
     risk = getattr(state, "risk_state", state)
-    return bool(active_flags(risk) & CROWDING_FLAGS) or "crowded" in str(
-        risk.get("primary_driver") or ""
-    )
+    return bool(active_flags(risk) & CROWDING_FLAGS)
 
 
 def recovery_setup_present(state: Any) -> bool:

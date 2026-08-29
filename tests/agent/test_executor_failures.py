@@ -10,45 +10,8 @@ from src.agent.loop import run_agent
 from src.agent.models import AgentDecision, ToolCall
 from src.agent.planner import ScriptedPlanner
 from src.tools.registry import EmptyArgs, SearchArgs, ToolRegistry, ToolSpec
-
-
-def _quiet_risk(**overrides):
-    payload = {
-        "as_of_date": "2024-01-05",
-        "data_cutoff": "2024-01-05T16:00:00-05:00",
-        "overall_risk_state": "bear_low_volatility",
-        "deterministic_trigger_count": 0,
-        "triggered_channels": [],
-        "structural_flags": [],
-        "supported_mechanisms": [],
-        "mechanism_statuses": {
-            "bear_market_recovery_crash": "not_confirmed",
-            "crowded_theme_unwind": "not_confirmed",
-        },
-        "mechanical_unwind_state": "NORMAL",
-        "primary_driver": None,
-        "theme_cluster": [],
-        "score_is_probability": False,
-    }
-    payload.update(overrides)
-    return payload
-
-
-def _crowding_risk(**overrides):
-    return _quiet_risk(
-        as_of_date="2026-05-29",
-        data_cutoff="2026-05-29T16:00:00-04:00",
-        overall_risk_state="normal",
-        deterministic_trigger_count=1,
-        triggered_channels=["portfolio_drawdown"],
-        structural_flags=["crowded_theme_unwind"],
-        supported_mechanisms=["crowded_theme_unwind"],
-        mechanism_statuses={"crowded_theme_unwind": "triggered"},
-        mechanical_unwind_state="FRAGILITY_BUILDING",
-        primary_driver="crowded_unwind",
-        theme_cluster=["CIEN", "COHR", "LITE"],
-        **overrides,
-    )
+from tests.cases import crowding_risk as _crowding_risk
+from tests.cases import quiet_risk as _quiet_risk
 
 
 def _decision(*names: str, **kwargs) -> AgentDecision:
