@@ -115,8 +115,8 @@ Requirements: Python **3.11–3.14** and [`uv`](https://docs.astral.sh/uv/).
 ```bash
 uv sync --locked --all-groups
 uv run pytest -q
-uv run python scripts/run_agent.py --as-of-date 2026-05-29 --verbose --planner heuristic
-uv run python scripts/run_agent.py --as-of-date 2024-01-05 --verbose --planner heuristic
+uv run python scripts/run_agent.py --as-of-date 2026-05-29 --planner heuristic
+uv run python scripts/run_agent.py --as-of-date 2024-01-05 --planner heuristic
 ```
 
 `--planner auto` uses DeepSeek when `DEEPSEEK_API_KEY` is set, otherwise the fail-closed heuristic planner. Both emit the same `AgentDecision` schema.
@@ -131,7 +131,7 @@ uv run python scripts/run_monitor.py
 ```python
 from src.agent import run_orchestrated_investigation
 
-result = run_orchestrated_investigation(as_of_date="2026-05-29", verbose=True)
+result = run_orchestrated_investigation(as_of_date="2026-05-29")
 print(result.spawned, result.trace.stop_reason)
 print(result.report)
 ```

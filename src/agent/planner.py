@@ -8,6 +8,7 @@ from typing import Any, Mapping, Protocol
 
 from src.agent.models import AgentDecision, MalformedPlannerOutput, ToolCall
 from src.agent.prompts import format_planner_user, planner_system_prompt
+from src.agent.specialists import QUIET_READ, finish_text_for
 from src.agent.state import AgentState
 from src.agent_prompts import (
     MECHANISM_QUERIES,
@@ -73,102 +74,88 @@ class HeuristicPlanner:
                 action="finish",
                 hypothesis="ordinary noise",
                 reason="NO_INVESTIGATION_NEEDED",
-                final_assessment=(
-                    "The deterministic state does not justify additional evidence search."
-                ),
+                final_assessment=QUIET_READ,
             )
         called = {item.name for item in state.observations if item.status in {"ok", "duplicate"}}
         crowding = crowding_signal_present(state.risk_state) and self.focus in {None, "kl_crowding"}
         recovery = recovery_setup_present(state.risk_state) and self.focus in {None, "dm_recovery"}
-        if crowding and "get_cluster_exposure" not in called:
-            return AgentDecision(
-                action="call_tools",
-                hypothesis="localized crowded unwind",
-                reason="cluster concentration may explain the pressure",
-                tool_calls=[
-                    ToolCall(id="s1-cluster", name="get_cluster_exposure", args={}),
-                    ToolCall(
-                        id="s1-pos",
-                        name="search_positioning",
-                        args={"query": MECHANISM_QUERIES["kl_crowding"]},
-                    ),
-                    ToolCall(
-                        id="s1-news",
-                        name="search_news",
-                        args={"query": "hedge fund technology exposure reduction optical networking"},
-                    ),
-                ],
-            )
-        cluster = [str(item).upper() for item in (state.risk_state.get("theme_cluster") or [])]
-        if crowding and "inspect_name" not in called and cluster:
-            symbol = "COHR" if "COHR" in cluster else cluster[0]
-            return AgentDecision(
-                action="call_tools",
-                hypothesis="forced deleveraging still unconfirmed",
-                reason="drill into the concentrated long before stopping",
-                tool_calls=[
-                    ToolCall(id="s2-name", name="inspect_name", args={"symbol": symbol}),
-                ],
-            )
-        if recovery and "get_factor_state" not in called:
-            return AgentDecision(
-                action="call_tools",
-                hypothesis="recovery-driven reversal",
-                reason="DM recovery flags are present in the deterministic state",
-                tool_calls=[
-                    ToolCall(id="s1-factor", name="get_factor_state", args={}),
-                    ToolCall(
-                        id="s1-dm-news",
-                        name="search_news",
-                        args={"query": MECHANISM_QUERIES["dm_recovery"]},
-                    ),
-                ],
-            )
-        if recovery and self.focus == "dm_recovery" and "compare_prior_state" not in called:
-            return AgentDecision(
-                action="call_tools",
-                hypothesis="recovery-driven reversal",
-                reason="compare the current recovery snapshot with the loaded prior state",
-                tool_calls=[
-                    ToolCall(id="s2-prior", name="compare_prior_state", args={}),
-                ],
-            )
+        if crowding:
+            decision = _crowding_step(state, called)
+            if decision is not None:
+                return decision
+        if recovery:
+            decision = _recovery_step(self.focus, called)
+            if decision is not None:
+                return decision
         if self.focus is None and want_fundamentals(state) and "search_filings" not in called:
             return AgentDecision(
                 action="call_tools",
                 hypothesis="fundamental deterioration",
                 reason="check bundled filings/earnings for the book names",
                 tool_calls=[
-                    ToolCall(
-                        id="s-filings",
-                        name="search_filings",
-                        args={"query": MECHANISM_QUERIES["fundamentals"]},
-                    ),
+                    ToolCall(id="s-filings", name="search_filings", args={"query": MECHANISM_QUERIES["fundamentals"]}),
                 ],
-            )
-        crowding = crowding_signal_present(state.risk_state) and self.focus in {None, "kl_crowding"}
-        if crowding:
-            finish_text = (
-                "Localized crowding pressure is supported. Forced deleveraging "
-                "and a book-wide unwind remain unconfirmed."
-            )
-        elif recovery_setup_present(state.risk_state) and self.focus in {None, "dm_recovery"}:
-            finish_text = (
-                "Recovery conditions were investigated. This remains an "
-                "interpretation of the deterministic state, not a crash call."
-            )
-        else:
-            finish_text = (
-                "Remaining uncertainty cannot be resolved into a confirmed "
-                "unwind or crash from available tools."
             )
         return AgentDecision(
             action="finish",
             hypothesis=state.investigated_hypotheses[-1] if state.investigated_hypotheses else "ordinary noise",
             reason="EVIDENCE_SUFFICIENT" if state.observations else "UNRESOLVABLE",
             open_questions=list(state.open_questions),
-            final_assessment=finish_text,
+            final_assessment=finish_text_for(state.risk_state, self.focus),
         )
+
+
+def _crowding_step(state: AgentState, called: set[str]) -> AgentDecision | None:
+    query = MECHANISM_QUERIES["kl_crowding"]
+    if "get_cluster_exposure" not in called:
+        return AgentDecision(
+            action="call_tools",
+            hypothesis="localized crowded unwind",
+            reason="cluster concentration may explain the pressure",
+            tool_calls=[
+                ToolCall(id="s1-cluster", name="get_cluster_exposure", args={}),
+                ToolCall(id="s1-pos", name="search_positioning", args={"query": query}),
+                ToolCall(id="s1-news", name="search_news", args={"query": query}),
+            ],
+        )
+    cluster = [str(item).upper() for item in (state.risk_state.get("theme_cluster") or [])]
+    if "inspect_name" not in called and cluster:
+        return AgentDecision(
+            action="call_tools",
+            hypothesis="forced deleveraging still unconfirmed",
+            reason="drill into the concentrated long before stopping",
+            tool_calls=[
+                ToolCall(id="s2-name", name="inspect_name", args={"symbol": cluster[0]}),
+            ],
+        )
+    return None
+
+
+def _recovery_step(focus: str | None, called: set[str]) -> AgentDecision | None:
+    if "get_factor_state" not in called:
+        return AgentDecision(
+            action="call_tools",
+            hypothesis="recovery-driven reversal",
+            reason="DM recovery flags are present in the deterministic state",
+            tool_calls=[
+                ToolCall(id="s1-factor", name="get_factor_state", args={}),
+                ToolCall(
+                    id="s1-dm-news",
+                    name="search_news",
+                    args={"query": MECHANISM_QUERIES["dm_recovery"]},
+                ),
+            ],
+        )
+    if focus == "dm_recovery" and "compare_prior_state" not in called:
+        return AgentDecision(
+            action="call_tools",
+            hypothesis="recovery-driven reversal",
+            reason="compare the current recovery snapshot with the loaded prior state",
+            tool_calls=[
+                ToolCall(id="s2-prior", name="compare_prior_state", args={}),
+            ],
+        )
+    return None
 
 
 class LLMPlanner:
@@ -247,11 +234,7 @@ def resolve_planner(
 ) -> Planner:
     if planner is not None:
         return planner
-    if use_llm is False:
-        return HeuristicPlanner(focus=focus)
     key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
-    if use_llm is True or key:
-        if not key and use_llm is True:
-            return HeuristicPlanner(focus=focus)
+    if use_llm is not False and key:
         return LLMPlanner(api_key=key, focus=focus, allowed_tools=allowed_tools)
     return HeuristicPlanner(focus=focus)

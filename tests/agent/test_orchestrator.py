@@ -113,17 +113,18 @@ def _recovery_mocks() -> ToolRegistry:
     )
 
 
-def _run(risk, **kwargs):
-    options = {
-        "as_of_date": risk["as_of_date"],
-        "risk_state": risk,
-        "crowding_tools": _crowding_mocks(),
-        "recovery_tools": _recovery_mocks(),
-        "use_llm": False,
-        "verbose": False,
-    }
-    options.update(kwargs)
-    return run_orchestrated_investigation(**options)
+def _run(risk, *, planners=None, registries=None, **kwargs):
+    regs = {"crowding": _crowding_mocks(), "recovery": _recovery_mocks()}
+    if registries:
+        regs.update(registries)
+    return run_orchestrated_investigation(
+        as_of_date=risk["as_of_date"],
+        risk_state=risk,
+        planners=planners or {},
+        registries=regs,
+        use_llm=False,
+        **kwargs,
+    )
 
 
 def _ok_names(result) -> list[str]:
@@ -158,7 +159,7 @@ def test_quiet_leftover_driver_spawns_nobody() -> None:
     )
     original = leftover_quiet_risk()
     _, fingerprint = freeze_risk_state(original)
-    result = _run(original, crowding_planner=forbidden, recovery_planner=forbidden)
+    result = _run(original, planners={"crowding": forbidden, "recovery": forbidden})
     assert result.spawned == ()
     assert result.stop_reason == "NO_INVESTIGATION_NEEDED"
     assert result.observations == ()
@@ -169,7 +170,7 @@ def test_quiet_leftover_driver_spawns_nobody() -> None:
 
 
 def test_semi_unwind_runs_crowding_skips_recovery() -> None:
-    result = _run(semi_unwind_risk(), crowding_planner=HeuristicPlanner(focus="kl_crowding"))
+    result = _run(semi_unwind_risk(), planners={"crowding": HeuristicPlanner(focus="kl_crowding")})
     names = _ok_names(result)
     assert result.spawned == ("crowding",)
     assert "recovery" not in result.specialist_results
@@ -180,7 +181,7 @@ def test_semi_unwind_runs_crowding_skips_recovery() -> None:
 
 
 def test_march_2020_runs_recovery_skips_crowding() -> None:
-    result = _run(recovery_risk(), recovery_planner=HeuristicPlanner(focus="dm_recovery"))
+    result = _run(recovery_risk(), planners={"recovery": HeuristicPlanner(focus="dm_recovery")})
     names = _ok_names(result)
     assert result.spawned == ("recovery",)
     assert "crowding" not in result.specialist_results
@@ -193,8 +194,10 @@ def test_march_2020_runs_recovery_skips_crowding() -> None:
 def test_both_flags_keep_evidence_isolated() -> None:
     result = _run(
         both_mechanisms_risk(),
-        crowding_planner=HeuristicPlanner(focus="kl_crowding"),
-        recovery_planner=HeuristicPlanner(focus="dm_recovery"),
+        planners={
+            "crowding": HeuristicPlanner(focus="kl_crowding"),
+            "recovery": HeuristicPlanner(focus="dm_recovery"),
+        },
     )
     crowding = result.specialist_results["crowding"]
     recovery = result.specialist_results["recovery"]
@@ -212,23 +215,25 @@ def test_both_flags_keep_evidence_isolated() -> None:
 def test_specialist_unknown_tool_outside_allowlist() -> None:
     result = _run(
         semi_unwind_risk(),
-        crowding_planner=ScriptedPlanner(
-            [
-                AgentDecision(
-                    action="call_tools",
-                    hypothesis="localized crowded unwind",
-                    reason="probe recovery by mistake",
-                    tool_calls=[ToolCall(id="1", name="get_factor_state", args={})],
-                ),
-                AgentDecision(
-                    action="finish",
-                    hypothesis="localized crowded unwind",
-                    reason="EVIDENCE_SUFFICIENT",
-                    final_assessment="Crowding note only.",
-                ),
-            ]
-        ),
-        crowding_tools=crowding_registry(_crowding_mocks()),
+        planners={
+            "crowding": ScriptedPlanner(
+                [
+                    AgentDecision(
+                        action="call_tools",
+                        hypothesis="localized crowded unwind",
+                        reason="probe recovery by mistake",
+                        tool_calls=[ToolCall(id="1", name="get_factor_state", args={})],
+                    ),
+                    AgentDecision(
+                        action="finish",
+                        hypothesis="localized crowded unwind",
+                        reason="EVIDENCE_SUFFICIENT",
+                        final_assessment="Crowding note only.",
+                    ),
+                ]
+            )
+        },
+        registries={"crowding": crowding_registry(_crowding_mocks())},
     )
     observation = result.specialist_results["crowding"].observations[0]
     assert observation.error_type == "unknown_tool"
@@ -238,26 +243,28 @@ def test_specialist_unknown_tool_outside_allowlist() -> None:
 def test_combined_note_is_calibrated_once() -> None:
     result = _run(
         both_mechanisms_risk(),
-        crowding_planner=ScriptedPlanner(
-            [
-                AgentDecision(
-                    action="finish",
-                    hypothesis="localized crowded unwind",
-                    reason="EVIDENCE_SUFFICIENT",
-                    final_assessment="Sell the longs. Localized crowding only.",
-                )
-            ]
-        ),
-        recovery_planner=ScriptedPlanner(
-            [
-                AgentDecision(
-                    action="finish",
-                    hypothesis="recovery-driven reversal",
-                    reason="EVIDENCE_SUFFICIENT",
-                    final_assessment="Crash probability is 80%. Recovery setup only.",
-                )
-            ]
-        ),
+        planners={
+            "crowding": ScriptedPlanner(
+                [
+                    AgentDecision(
+                        action="finish",
+                        hypothesis="localized crowded unwind",
+                        reason="EVIDENCE_SUFFICIENT",
+                        final_assessment="Sell the longs. Localized crowding only.",
+                    )
+                ]
+            ),
+            "recovery": ScriptedPlanner(
+                [
+                    AgentDecision(
+                        action="finish",
+                        hypothesis="recovery-driven reversal",
+                        reason="EVIDENCE_SUFFICIENT",
+                        final_assessment="Crash probability is 80%. Recovery setup only.",
+                    )
+                ]
+            ),
+        },
     )
     report = result.report
     for heading in ("Current read", "Observed:", "Inferred:", "Against:", "Not confirmed:", "Investigation path:"):
@@ -275,8 +282,10 @@ def test_risk_state_fingerprint_unchanged() -> None:
     _, fingerprint = freeze_risk_state(original)
     result = _run(
         original,
-        crowding_planner=HeuristicPlanner(focus="kl_crowding"),
-        recovery_planner=HeuristicPlanner(focus="dm_recovery"),
+        planners={
+            "crowding": HeuristicPlanner(focus="kl_crowding"),
+            "recovery": HeuristicPlanner(focus="dm_recovery"),
+        },
     )
     assert fingerprint_risk_state(result.risk_state) == fingerprint
     assert result.risk_state["score_is_probability"] is False
@@ -330,10 +339,11 @@ def test_specialists_overlap_on_shared_wall_clock() -> None:
     t0 = time.monotonic()
     result = _run(
         both_mechanisms_risk(),
-        crowding_planner=crowding_planner,
-        recovery_planner=recovery_planner,
-        crowding_tools=_registry({"get_cluster_exposure": _slow("crowding")}),
-        recovery_tools=_registry({"get_factor_state": _slow("recovery")}),
+        planners={"crowding": crowding_planner, "recovery": recovery_planner},
+        registries={
+            "crowding": _registry({"get_cluster_exposure": _slow("crowding")}),
+            "recovery": _registry({"get_factor_state": _slow("recovery")}),
+        },
         overall_deadline_seconds=5.0,
     )
     elapsed = time.monotonic() - t0

@@ -1,8 +1,8 @@
-"""Code-first orchestrator over two mechanism-specialist monitors.
+"""Code-first orchestrator over mechanism-specialist monitors.
 
-Routing is Python. Independent specialists overlap on a shared wall-clock
-deadline via ``asyncio.wait`` + ``asyncio.to_thread(run_agent)``. They do
-not talk to each other. Findings are never merged into a crash score.
+Independent specialists overlap on a shared wall-clock deadline via
+``asyncio.wait`` + ``asyncio.to_thread(run_agent)``. They do not talk to
+each other. Findings are never merged into a crash score.
 """
 
 from __future__ import annotations
@@ -12,37 +12,26 @@ import copy
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
-from typing import Any, Callable, Mapping, Sequence
+from dataclasses import dataclass
+from typing import Any, Callable, Mapping
 
 from src.agent.loop import (
     MAX_STEPS,
     OVERALL_DEADLINE_SECONDS,
     AgentRunResult,
-    _load_risk_state,
+    prepare_risk_snapshot,
     run_agent,
 )
 from src.agent.models import OrchestratorTrace, ToolObservation
-from src.agent.planner import Planner, resolve_planner
+from src.agent.planner import Planner
 from src.agent.report import build_combined_pm_note, sanitize_text
-from src.agent.state import fingerprint_risk_state, freeze_risk_state
-from src.agent_prompts import (
-    crowding_signal_present,
-    no_meaningful_risk_signal,
-    recovery_setup_present,
-)
-from src.tools.registry import ToolRegistry, crowding_registry, recovery_registry
+from src.agent.specialists import BY_NAME, SCHEDULE, select_specialists
+from src.agent_prompts import no_meaningful_risk_signal
+from src.mvp.config import HISTORICAL_EXAMPLE_DATE
+from src.tools.registry import ToolRegistry
 from src.utils.io import DEFAULT_PROCESSED_DIR
-from src.utils.market_time import assessment_timestamp
 
 Monotonic = Callable[[], float]
-CROWDING, RECOVERY = "crowding", "recovery"
-SPECIALIST_FOCUS = {CROWDING: "kl_crowding", RECOVERY: "dm_recovery"}
-SPECIALIST_LABELS = {
-    CROWDING: "Crowding (Khandani–Lo)",
-    RECOVERY: "Recovery (Daniel–Moskowitz)",
-}
-DEFAULT_REGISTRIES = {CROWDING: crowding_registry, RECOVERY: recovery_registry}
 
 
 @dataclass(frozen=True)
@@ -56,140 +45,82 @@ class OrchestratedRunResult:
     spawned: tuple[str, ...]
     specialist_results: dict[str, AgentRunResult]
     observations: tuple[ToolObservation, ...]
-    planner_kind: str = "orchestrator"
-    routing: dict[str, Any] = field(default_factory=dict)
+    routing: dict[str, Any]
 
 
-def select_specialists(risk_state: Mapping[str, Any]) -> tuple[str, ...]:
-    """Quiet books spawn nobody. Flags, not leftover primary_driver labels."""
+@dataclass(frozen=True)
+class _Job:
+    """Shared inputs for every specialist on this investigation."""
 
-    if no_meaningful_risk_signal(risk_state):
-        return ()
-    spawned: list[str] = []
-    if crowding_signal_present(risk_state):
-        spawned.append(CROWDING)
-    if recovery_setup_present(risk_state):
-        spawned.append(RECOVERY)
-    return tuple(spawned)
+    as_of_date: str
+    max_steps: int
+    deadline: float
+    risk_state: Mapping[str, Any]
+    prior_state: Mapping[str, Any] | None
+    planners: Mapping[str, Planner]
+    registries: Mapping[str, ToolRegistry]
+    use_llm: bool | None
+    monotonic: Monotonic
+    processed_dir: Any
+    run_id: str
 
 
-def run_orchestrated_investigation(
-    as_of_date: str = "2026-05-29",
-    max_steps: int = MAX_STEPS,
-    verbose: bool = False,
-    *,
-    overall_deadline_seconds: float = OVERALL_DEADLINE_SECONDS,
-    risk_state: Mapping[str, Any] | None = None,
-    prior_state: Mapping[str, Any] | None = None,
-    mvp_result: Any | None = None,
-    crowding_planner: Planner | None = None,
-    recovery_planner: Planner | None = None,
-    crowding_tools: ToolRegistry | None = None,
-    recovery_tools: ToolRegistry | None = None,
-    use_llm: bool | None = None,
-    monotonic: Monotonic = time.monotonic,
-    processed_dir=DEFAULT_PROCESSED_DIR,
-) -> OrchestratedRunResult:
-    """Sync CLI/test entry. Nested event loops run the coroutine in a side thread."""
-
-    def _factory() -> Any:
-        return run_orchestrated_investigation_async(
-            as_of_date,
-            max_steps,
-            verbose,
-            overall_deadline_seconds=overall_deadline_seconds,
-            risk_state=risk_state,
-            prior_state=prior_state,
-            mvp_result=mvp_result,
-            crowding_planner=crowding_planner,
-            recovery_planner=recovery_planner,
-            crowding_tools=crowding_tools,
-            recovery_tools=recovery_tools,
-            use_llm=use_llm,
-            monotonic=monotonic,
-            processed_dir=processed_dir,
-        )
-
+def _run_sync(factory):
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(_factory())
+        return asyncio.run(factory())
     with ThreadPoolExecutor(max_workers=1) as pool:
-        return pool.submit(lambda: asyncio.run(_factory())).result()
+        return pool.submit(lambda: asyncio.run(factory())).result()
+
+
+def run_orchestrated_investigation(*args, **kwargs) -> OrchestratedRunResult:
+    """Sync CLI/test entry around ``run_orchestrated_investigation_async``."""
+
+    return _run_sync(lambda: run_orchestrated_investigation_async(*args, **kwargs))
 
 
 async def run_orchestrated_investigation_async(
-    as_of_date: str = "2026-05-29",
+    as_of_date: str = HISTORICAL_EXAMPLE_DATE,
     max_steps: int = MAX_STEPS,
-    verbose: bool = False,
     *,
     overall_deadline_seconds: float = OVERALL_DEADLINE_SECONDS,
     risk_state: Mapping[str, Any] | None = None,
     prior_state: Mapping[str, Any] | None = None,
     mvp_result: Any | None = None,
-    crowding_planner: Planner | None = None,
-    recovery_planner: Planner | None = None,
-    crowding_tools: ToolRegistry | None = None,
-    recovery_tools: ToolRegistry | None = None,
+    planners: Mapping[str, Planner] | None = None,
+    registries: Mapping[str, ToolRegistry] | None = None,
     use_llm: bool | None = None,
     monotonic: Monotonic = time.monotonic,
     processed_dir=DEFAULT_PROCESSED_DIR,
 ) -> OrchestratedRunResult:
-    loaded = _load_risk_state(as_of_date, risk_state=risk_state, mvp_result=mvp_result)
-    frozen, fingerprint = freeze_risk_state(loaded)
-    cutoff = str(
-        frozen.get("data_cutoff") or frozen.get("evidence_cutoff") or assessment_timestamp(as_of_date)
+    frozen, _, date, cutoff = prepare_risk_snapshot(
+        as_of_date, risk_state=risk_state, mvp_result=mvp_result
     )
     run_id = uuid.uuid4().hex[:12]
-    date = str(frozen.get("as_of_date") or as_of_date)
-    prior = copy.deepcopy(dict(prior_state)) if prior_state is not None else None
     spawned = select_specialists(frozen)
     quiet = no_meaningful_risk_signal(frozen)
     deadline = float(overall_deadline_seconds)
     routing = {
         "quiet": quiet,
-        "crowding_signal": CROWDING in spawned,
-        "recovery_setup": RECOVERY in spawned,
         "spawned": list(spawned),
-        "schedule": "parallel_shared_deadline",
+        "schedule": SCHEDULE,
         "deadline_seconds": deadline,
     }
-    decisions: list[dict[str, Any]] = [
-        {
-            "actor": "orchestrator",
-            "action": "spawn" if spawned else "skip",
-            "specialists": list(spawned),
-            "reason": "NO_INVESTIGATION_NEEDED" if quiet else "deterministic_flags",
-            "schedule": routing["schedule"],
-        }
-    ]
-    if verbose:
-        print(f"Orchestrator: spawned={list(spawned)} schedule=parallel_shared_deadline\n")
-
-    planners = {CROWDING: crowding_planner, RECOVERY: recovery_planner}
-    registries = {CROWDING: crowding_tools, RECOVERY: recovery_tools}
-    specialist_results, spawn_decisions = await _run_specialists_parallel(
-        spawned,
-        deadline=deadline,
-        date=date,
+    job = _Job(
+        as_of_date=date,
         max_steps=max_steps,
-        verbose=verbose,
-        frozen=frozen,
-        prior=prior,
-        planners=planners,
-        registries=registries,
+        deadline=deadline,
+        risk_state=frozen,
+        prior_state=prior_state,
+        planners=planners or {},
+        registries=registries or {},
         use_llm=use_llm,
         monotonic=monotonic,
         processed_dir=processed_dir,
         run_id=run_id,
     )
-    decisions.extend(spawn_decisions)
-
-    if fingerprint_risk_state(frozen) != fingerprint:
-        raise RuntimeError("invariant violated: deterministic risk state changed")
-    for result in specialist_results.values():
-        result.state.assert_risk_unchanged()
-
+    specialist_results, spawn_decisions = await _gather(spawned, job)
     stop_reason = _combined_stop(spawned, specialist_results, quiet)
     report, calibrated = build_combined_pm_note(
         risk_state=frozen,
@@ -197,29 +128,35 @@ async def run_orchestrated_investigation_async(
         specialist_results=specialist_results,
         stop_reason=stop_reason,
     )
-    if verbose:
-        print(report)
     observations = tuple(
         item
         for name in spawned
         if name in specialist_results
         for item in specialist_results[name].observations
     )
-    errors = [
-        error
-        for name in spawned
-        if name in specialist_results
-        for error in specialist_results[name].state.errors
-    ]
     trace = OrchestratorTrace(
         run_id=run_id,
         as_of_date=date,
         assessment_cutoff=cutoff,
         spawned=list(spawned),
         routing=routing,
-        decisions=decisions,
+        decisions=[
+            {
+                "actor": "orchestrator",
+                "action": "spawn" if spawned else "skip",
+                "specialists": list(spawned),
+                "reason": "NO_INVESTIGATION_NEEDED" if quiet else "deterministic_flags",
+                "schedule": SCHEDULE,
+            },
+            *spawn_decisions,
+        ],
         specialist_traces={name: specialist_results[name].trace for name in specialist_results},
-        errors=errors,
+        errors=[
+            error
+            for name in spawned
+            if name in specialist_results
+            for error in specialist_results[name].state.errors
+        ],
         stop_reason=stop_reason,
         final_assessment=sanitize_text(calibrated.get("current_read")),
         calibrated=calibrated,
@@ -239,77 +176,27 @@ async def run_orchestrated_investigation_async(
     )
 
 
-async def _run_specialists_parallel(
-    spawned: Sequence[str],
-    *,
-    deadline: float,
-    date: str,
-    max_steps: int,
-    verbose: bool,
-    frozen: Mapping[str, Any],
-    prior: dict[str, Any] | None,
-    planners: Mapping[str, Planner | None],
-    registries: Mapping[str, ToolRegistry | None],
-    use_llm: bool | None,
-    monotonic: Monotonic,
-    processed_dir: Any,
-    run_id: str,
-) -> tuple[dict[str, AgentRunResult], list[dict[str, Any]]]:
-    """Every specialist gets the same wall-clock budget. No leftover crumbs."""
-
+async def _gather(spawned: tuple[str, ...], job: _Job) -> tuple[dict[str, AgentRunResult], list[dict[str, Any]]]:
     if not spawned:
         return {}, []
     tasks = {
-        name: asyncio.create_task(
-            asyncio.to_thread(
-                _run_one_specialist,
-                name,
-                date=date,
-                max_steps=max_steps,
-                verbose=verbose,
-                deadline=deadline,
-                frozen=frozen,
-                prior=prior,
-                planner=planners.get(name),
-                registry=registries.get(name),
-                use_llm=use_llm,
-                monotonic=monotonic,
-                processed_dir=processed_dir,
-                run_id=run_id,
-            ),
-            name=f"specialist-{name}",
-        )
+        name: asyncio.create_task(asyncio.to_thread(_run_specialist, name, job), name=f"specialist-{name}")
         for name in spawned
     }
-    _done, pending = await asyncio.wait(set(tasks.values()), timeout=max(0.01, deadline))
+    _done, pending = await asyncio.wait(set(tasks.values()), timeout=max(0.01, job.deadline))
     results: dict[str, AgentRunResult] = {}
     extra: list[dict[str, Any]] = []
     for name in spawned:
         task = tasks[name]
         if task in pending:
             task.cancel()
-            extra.append(
-                {
-                    "actor": "orchestrator",
-                    "action": "skip",
-                    "specialist": name,
-                    "reason": "DEADLINE_EXCEEDED",
-                }
-            )
+            extra.append({"actor": "orchestrator", "action": "skip", "specialist": name, "reason": "DEADLINE_EXCEEDED"})
             continue
         try:
             result = task.result()
         except Exception as exc:  # noqa: BLE001 - isolate one specialist
-            extra.append(
-                {
-                    "actor": name,
-                    "action": "failed",
-                    "reason": "UNRESOLVABLE",
-                    "error": str(exc),
-                }
-            )
+            extra.append({"actor": name, "action": "failed", "reason": "UNRESOLVABLE", "error": str(exc)})
             continue
-        results[name] = result
         extra.append(
             {
                 "actor": name,
@@ -319,56 +206,30 @@ async def _run_specialists_parallel(
                 "tools": [item.name for item in result.observations],
             }
         )
+        results[name] = result
     return results, extra
 
 
-def _run_one_specialist(
-    name: str,
-    *,
-    date: str,
-    max_steps: int,
-    verbose: bool,
-    deadline: float,
-    frozen: Mapping[str, Any],
-    prior: dict[str, Any] | None,
-    planner: Planner | None,
-    registry: ToolRegistry | None,
-    use_llm: bool | None,
-    monotonic: Monotonic,
-    processed_dir: Any,
-    run_id: str,
-) -> AgentRunResult:
-    tools = registry if registry is not None else DEFAULT_REGISTRIES[name]()
-    selected = resolve_planner(
-        planner=planner,
-        use_llm=use_llm,
-        focus=SPECIALIST_FOCUS[name],
-        allowed_tools=tools.names(),
-    )
-    if verbose:
-        print(f"=== {SPECIALIST_LABELS[name]} ===\n")
+def _run_specialist(name: str, job: _Job) -> AgentRunResult:
+    spec = BY_NAME[name]
+    tools = job.registries.get(name) or spec.registry()
     return run_agent(
-        as_of_date=date,
-        max_steps=max_steps,
-        verbose=verbose,
-        print_report=False,
-        overall_deadline_seconds=deadline,
-        risk_state=copy.deepcopy(dict(frozen)),
-        prior_state=copy.deepcopy(prior) if prior is not None else None,
-        planner=selected,
+        as_of_date=job.as_of_date,
+        max_steps=job.max_steps,
+        overall_deadline_seconds=job.deadline,
+        risk_state=job.risk_state,
+        prior_state=job.prior_state,
+        planner=job.planners.get(name),
         registry=tools,
-        focus=SPECIALIST_FOCUS[name],
-        monotonic=monotonic,
-        processed_dir=processed_dir,
-        run_id=f"{run_id}-{name[:3]}",
+        use_llm=job.use_llm,
+        focus=spec.focus,
+        monotonic=job.monotonic,
+        processed_dir=job.processed_dir,
+        run_id=f"{job.run_id}-{name[:3]}",
     )
 
 
-def _combined_stop(
-    spawned: Sequence[str],
-    results: Mapping[str, AgentRunResult],
-    quiet: bool,
-) -> str:
+def _combined_stop(spawned: tuple[str, ...], results: Mapping[str, AgentRunResult], quiet: bool) -> str:
     if not spawned:
         return "NO_INVESTIGATION_NEEDED" if quiet else "UNRESOLVABLE"
     reasons = [results[name].stop_reason for name in spawned if name in results]

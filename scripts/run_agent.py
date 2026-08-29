@@ -2,11 +2,11 @@
 
 Default path: code orchestrator + two mechanism specialists.
 
-    uv run python scripts/run_agent.py --as-of-date 2026-05-29 --verbose --planner heuristic
+    uv run python scripts/run_agent.py --as-of-date 2026-05-29 --planner heuristic
 
 Quiet control (no specialists):
 
-    uv run python scripts/run_agent.py --as-of-date 2024-01-05 --verbose --planner heuristic
+    uv run python scripts/run_agent.py --as-of-date 2024-01-05 --planner heuristic
 """
 
 from __future__ import annotations
@@ -63,7 +63,11 @@ def _build_parser() -> argparse.ArgumentParser:
         default="auto",
         help="auto uses DeepSeek when DEEPSEEK_API_KEY is set, else heuristic",
     )
-    parser.add_argument("--verbose", action="store_true")
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Also print stop reason and spawned specialists to stderr",
+    )
     parser.add_argument(
         "--save-trace",
         default=None,
@@ -102,7 +106,6 @@ def main() -> int:
         result = run_agent(
             as_of_date=args.as_of_date,
             max_steps=args.max_steps,
-            verbose=args.verbose,
             overall_deadline_seconds=args.deadline_seconds,
             risk_state=assessment,
             prior_state=prior,
@@ -113,7 +116,6 @@ def main() -> int:
         result = run_orchestrated_investigation(
             as_of_date=args.as_of_date,
             max_steps=args.max_steps,
-            verbose=args.verbose,
             overall_deadline_seconds=args.deadline_seconds,
             risk_state=assessment,
             prior_state=prior,
@@ -121,8 +123,10 @@ def main() -> int:
         )
         trace = result.trace
 
-    if not args.verbose:
-        print(result.report)
+    print(result.report)
+    if args.verbose:
+        spawned = getattr(result, "spawned", ())
+        print(f"# stop={result.stop_reason} spawned={list(spawned)}", file=sys.stderr)
     if args.save_trace:
         path = Path(args.save_trace)
         if not path.is_absolute():

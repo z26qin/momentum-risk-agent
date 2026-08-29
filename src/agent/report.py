@@ -6,6 +6,7 @@ import re
 from typing import Any, Mapping, Sequence
 
 from src.agent.models import AgentDecision, ToolObservation
+from src.agent.specialists import BY_NAME, QUIET_READ
 from src.agent.state import AgentState
 from src.agent_prompts import heuristic_classify
 
@@ -34,6 +35,22 @@ def sanitize_text(value: str | None) -> str:
 def contains_forbidden(value: str | None) -> bool:
     text = str(value or "")
     return bool(_TRADE.search(text) or _CRASH_PROB.search(text))
+
+
+ESCALATED_READ = (
+    "Escalate for PM review of the deterministic state. "
+    "This is not a trade instruction."
+)
+UNCERTAIN_READ = (
+    "Investigation stopped with remaining uncertainty. The quantitative "
+    "state is unchanged."
+)
+NO_PRIOR = "No prior-date comparison was loaded for this investigation."
+DEFAULT_NEXT_CHECK = (
+    "Continue ordinary monitoring of breadth, liquidity, and the concentrated names."
+)
+FORBIDDEN_DROPPED = "Model proposed forbidden action language; that text was dropped."
+_SNAPSHOT_DELTA_PREFIX = "Deterministic snapshot already compared with"
 
 
 def snapshot_observed(risk: Mapping[str, Any]) -> list[str]:
@@ -76,9 +93,7 @@ def calibrated_buckets(state: AgentState) -> dict[str, Any]:
         if cleaned:
             inferred.append(cleaned)
         elif contains_forbidden(last.final_assessment):
-            inferred.append(
-                "Model proposed forbidden action language; that text was dropped."
-            )
+            inferred.append(FORBIDDEN_DROPPED)
 
     not_confirmed = [sanitize_text(item) for item in (classified.get("missing_evidence") or [])]
     for item in (classified.get("contradicting_claims") or []):
@@ -105,8 +120,10 @@ def calibrated_buckets(state: AgentState) -> dict[str, Any]:
 
 
 def build_pm_note(state: AgentState) -> str:
-    buckets = calibrated_buckets(state)
-    path = _path_lines(state)
+    return render_pm_note(calibrated_buckets(state), _path_text(state.decisions, state.stop_reason))
+
+
+def render_pm_note(buckets: Mapping[str, Any], path: str) -> str:
     return (
         f"Current read\n{buckets['current_read']}\n\n"
         f"Observed:\n{_bullets(buckets['observed'])}\n\n"
@@ -117,12 +134,6 @@ def build_pm_note(state: AgentState) -> str:
         f"What changed:\n{buckets['what_changed']}\n\n"
         f"Next useful check:\n{buckets['next_useful_check']}\n"
     )
-
-
-MECHANISM_NOTE_LABELS = {
-    "crowding": "Crowding (Khandani–Lo)",
-    "recovery": "Recovery (Daniel–Moskowitz)",
-}
 
 
 def build_combined_pm_note(
@@ -150,74 +161,70 @@ def build_combined_pm_note(
         buckets = mechanism_buckets.get(name)
         if not buckets:
             continue
-        label = MECHANISM_NOTE_LABELS[name] if prefix else None
+        label = BY_NAME[name].label if prefix else None
         observed.extend(_label([item for item in buckets["observed"] if item not in snapshot_set], label))
         inferred.extend(_label(buckets["inferred"], label))
         against.extend(_label(buckets["contradicted"], label))
         not_confirmed.extend(_label(buckets["not_confirmed"], label))
 
-    observed = _clean_lines(observed) or ["No additional observations beyond the snapshot."]
-    inferred = _clean_lines(inferred) or ["No additional inference beyond the deterministic snapshot."]
-    against = _clean_lines(against) or ["None"]
-    not_confirmed = _clean_lines(not_confirmed) or ["None"]
-    current_read = _combined_current_read(stop_reason, spawned, mechanism_buckets)
-    what_changed = _combined_what_changed(risk_state, spawned, mechanism_buckets)
-    next_check = _combined_next_check(risk_state, spawned, mechanism_buckets)
-    path = _combined_path(spawned, specialist_results, stop_reason)
-    report = (
-        f"Current read\n{current_read}\n\n"
-        f"Observed:\n{_bullets(observed)}\n\n"
-        f"Inferred:\n{_bullets(inferred)}\n\n"
-        f"Against:\n{_bullets(against)}\n\n"
-        f"Not confirmed:\n{_bullets(not_confirmed)}\n\n"
-        f"Investigation path:\n{path}\n\n"
-        f"What changed:\n{what_changed}\n\n"
-        f"Next useful check:\n{next_check}\n"
-    )
-    return report, {
-        "observed": observed,
-        "inferred": inferred,
-        "contradicted": against,
-        "not_confirmed": not_confirmed,
-        "current_read": current_read,
-        "what_changed": what_changed,
-        "next_useful_check": next_check,
+    buckets = {
+        "observed": _clean_lines(observed) or ["No additional observations beyond the snapshot."],
+        "inferred": _clean_lines(inferred) or ["No additional inference beyond the deterministic snapshot."],
+        "contradicted": _clean_lines(against) or ["None"],
+        "not_confirmed": _clean_lines(not_confirmed) or ["None"],
+        "current_read": _combined_current_read(stop_reason, spawned, mechanism_buckets),
+        "what_changed": _combined_what_changed(risk_state, spawned, mechanism_buckets),
+        "next_useful_check": _combined_next_check(risk_state, spawned, mechanism_buckets),
         "score_is_probability": False,
         "spawned": list(spawned),
         "mechanisms": mechanism_buckets,
     }
+    path = _combined_path(spawned, specialist_results, stop_reason)
+    return render_pm_note(buckets, path), buckets
 
 
 def _bullets(items: Sequence[str]) -> str:
     return "\n".join(f"- {item}" for item in items) if items else "- None"
 
 
-def _path_lines(state: AgentState) -> str:
+def _path_text(
+    decisions: Sequence[AgentDecision],
+    stop_reason: str | None,
+    *,
+    label: str | None = None,
+    start: int = 1,
+) -> str:
+    return "\n".join(_path_lines(decisions, stop_reason, label=label, start=start)) or "1. Stopped"
+
+
+def _path_lines(
+    decisions: Sequence[AgentDecision],
+    stop_reason: str | None,
+    *,
+    label: str | None = None,
+    start: int = 1,
+) -> list[str]:
+    tag = f"[{label}] " if label else ""
     lines: list[str] = []
-    step = 0
-    for decision in state.decisions:
+    step = start - 1
+    for decision in decisions:
         step += 1
         tools = [call.name for call in decision.tool_calls] if decision.action == "call_tools" else []
         if tools:
-            lines.append(f"{step}. {decision.hypothesis} · tools={tools}")
+            lines.append(f"{step}. {tag}{decision.hypothesis} · tools={tools}")
         else:
-            lines.append(f"{step}. {decision.action.upper()} ({decision.reason})")
-    if state.stop_reason:
-        lines.append(f"{len(lines)+1}. STOP: {state.stop_reason}")
-    return "\n".join(lines) or "1. Stopped"
+            lines.append(f"{step}. {tag}{decision.action.upper()} ({decision.reason})")
+    if stop_reason:
+        step += 1
+        lines.append(f"{step}. {tag}STOP: {stop_reason}")
+    return lines
 
 
 def _current_read(state: AgentState, classified: Mapping[str, Any]) -> str:
     if state.stop_reason == "NO_INVESTIGATION_NEEDED":
-        return (
-            "The deterministic state does not justify additional evidence search. "
-            "Continue ordinary monitoring."
-        )
+        return QUIET_READ
     if state.stop_reason == "ESCALATED":
-        return (
-            "Escalate for PM review of the deterministic state. "
-            "This is not a trade instruction."
-        )
+        return ESCALATED_READ
     assessment = classified.get("assessment")
     if assessment == "contradicting":
         return "Retrieved evidence argues against the working hypothesis."
@@ -226,10 +233,7 @@ def _current_read(state: AgentState, classified: Mapping[str, Any]) -> str:
             "Pressure is localized; available evidence does not establish a "
             "book-wide unwind or recovery crash."
         )
-    return (
-        "Investigation stopped with remaining uncertainty. The quantitative "
-        "state is unchanged."
-    )
+    return UNCERTAIN_READ
 
 
 def _next_check(state: AgentState, classified: Mapping[str, Any]) -> str:
@@ -243,7 +247,7 @@ def _next_check(state: AgentState, classified: Mapping[str, Any]) -> str:
         return str(question)
     if risk_checks:
         return str(risk_checks[0])
-    return "Continue ordinary monitoring of breadth, liquidity, and the concentrated names."
+    return DEFAULT_NEXT_CHECK
 
 
 def _what_changed(state: AgentState) -> str:
@@ -256,13 +260,7 @@ def _what_changed(state: AgentState) -> str:
             return "\n".join(f"- {change}" for change in changes)
         if payload.get("status") == "unavailable":
             return str(payload.get("limitation") or "Prior comparison unavailable.")
-    compare_to = state.risk_state.get("compare_to_date")
-    if compare_to:
-        return (
-            f"Deterministic snapshot already compared with {compare_to}; "
-            "this investigation did not recompute that delta."
-        )
-    return "No prior-date comparison was loaded for this investigation."
+    return _snapshot_delta(state.risk_state)
 
 
 def _mechanism(state: AgentState) -> str | None:
@@ -339,7 +337,7 @@ def _clean_lines(items: Sequence[str]) -> list[str]:
         text = sanitize_text(item)
         if not text:
             if contains_forbidden(item):
-                cleaned.append("Model proposed forbidden action language; that text was dropped.")
+                cleaned.append(FORBIDDEN_DROPPED)
             continue
         cleaned.append(text)
     return list(dict.fromkeys(cleaned))
@@ -351,21 +349,27 @@ def _combined_current_read(
     buckets: Mapping[str, Mapping[str, Any]],
 ) -> str:
     if stop_reason == "NO_INVESTIGATION_NEEDED" or not spawned:
-        return (
-            "The deterministic state does not justify additional evidence search. "
-            "Continue ordinary monitoring."
-        )
+        return QUIET_READ
     if len(spawned) == 1:
         text = sanitize_text(str((buckets.get(spawned[0]) or {}).get("current_read") or ""))
-        if text:
-            return text
-    if len(spawned) > 1:
+        return text or UNCERTAIN_READ
+    names = [BY_NAME[name].label.split(" (")[0] for name in spawned]
+    joined = " and ".join(names) if len(names) == 2 else ", ".join(names)
+    return (
+        f"{joined} were investigated separately. "
+        "Findings are listed by mechanism and are not combined into one score. "
+        "This is not a trade instruction."
+    )
+
+
+def _snapshot_delta(risk_state: Mapping[str, Any]) -> str:
+    compare_to = risk_state.get("compare_to_date")
+    if compare_to:
         return (
-            "Crowding and recovery were investigated separately. "
-            "Findings are listed by mechanism and are not combined into one score. "
-            "This is not a trade instruction."
+            f"{_SNAPSHOT_DELTA_PREFIX} {compare_to}; "
+            "this investigation did not recompute that delta."
         )
-    return "Investigation stopped with remaining uncertainty. The quantitative state is unchanged."
+    return NO_PRIOR
 
 
 def _combined_what_changed(
@@ -373,19 +377,11 @@ def _combined_what_changed(
     spawned: Sequence[str],
     buckets: Mapping[str, Mapping[str, Any]],
 ) -> str:
-    for name in ("recovery", "crowding"):
-        if name not in spawned:
-            continue
+    for name in spawned:
         text = str((buckets.get(name) or {}).get("what_changed") or "").strip()
-        if text and "No prior-date comparison" not in text:
+        if text and text != NO_PRIOR and not text.startswith(_SNAPSHOT_DELTA_PREFIX):
             return text
-    compare_to = risk_state.get("compare_to_date")
-    if compare_to:
-        return (
-            f"Deterministic snapshot already compared with {compare_to}; "
-            "this investigation did not recompute that delta."
-        )
-    return "No prior-date comparison was loaded for this investigation."
+    return _snapshot_delta(risk_state)
 
 
 def _combined_next_check(
@@ -398,9 +394,7 @@ def _combined_next_check(
         if text:
             return text
     checks = list(risk_state.get("next_checks") or [])
-    return str(checks[0]) if checks else (
-        "Continue ordinary monitoring of breadth, liquidity, and the concentrated names."
-    )
+    return str(checks[0]) if checks else DEFAULT_NEXT_CHECK
 
 
 def _combined_path(
@@ -418,14 +412,13 @@ def _combined_path(
             step += 1
             lines.append(f"{step}. [{name}] skipped")
             continue
-        for decision in result.state.decisions:
-            step += 1
-            tools = [call.name for call in decision.tool_calls] if decision.action == "call_tools" else []
-            if tools:
-                lines.append(f"{step}. [{name}] {decision.hypothesis} · tools={tools}")
-            else:
-                lines.append(f"{step}. [{name}] {decision.action.upper()} ({decision.reason})")
-        step += 1
-        lines.append(f"{step}. [{name}] STOP: {result.stop_reason}")
-    lines.append(f"{len(lines)+1}. Combined STOP: {stop_reason}")
+        chunk = _path_lines(
+            result.state.decisions,
+            result.stop_reason,
+            label=name,
+            start=step + 1,
+        )
+        lines.extend(chunk)
+        step += len(chunk)
+    lines.append(f"{len(lines) + 1}. Combined STOP: {stop_reason}")
     return "\n".join(lines)

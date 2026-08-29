@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from typing import Any, Mapping
 
 from src.agent.models import AgentDecision, ToolObservation
+from src.utils.market_time import assessment_timestamp
 
 
 def fingerprint_risk_state(payload: Mapping[str, Any]) -> str:
@@ -17,6 +18,14 @@ def fingerprint_risk_state(payload: Mapping[str, Any]) -> str:
 def freeze_risk_state(payload: Mapping[str, Any]) -> tuple[dict[str, Any], str]:
     copied = copy.deepcopy(dict(payload))
     return copied, fingerprint_risk_state(copied)
+
+
+def risk_cutoff(payload: Mapping[str, Any], as_of_date: str) -> str:
+    return str(
+        payload.get("data_cutoff")
+        or payload.get("evidence_cutoff")
+        or assessment_timestamp(as_of_date)
+    )
 
 
 @dataclass
@@ -39,11 +48,9 @@ class AgentState:
     open_questions: list[str] = field(default_factory=list)
     evidence: list[dict[str, Any]] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
-    logs: list[str] = field(default_factory=list)
     step: int = 0
     status: str = "running"
     stop_reason: str | None = None
-    consecutive_duplicate_steps: int = 0
     last_decision: AgentDecision | None = None
     focus: str | None = None
 

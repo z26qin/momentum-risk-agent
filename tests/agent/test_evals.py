@@ -20,7 +20,6 @@ def test_eval_quiet_does_not_search(risk) -> None:
         as_of_date=risk["as_of_date"],
         risk_state=risk,
         planner=HeuristicPlanner(),
-        verbose=False,
         max_steps=6,
     )
     assert result.stop_reason == "NO_INVESTIGATION_NEEDED"
@@ -36,7 +35,6 @@ def test_eval_semi_unwind_uses_crowding_tools() -> None:
         as_of_date="2026-05-29",
         risk_state=original,
         planner=HeuristicPlanner(),
-        verbose=False,
         max_steps=6,
         overall_deadline_seconds=10,
     )
@@ -53,7 +51,6 @@ def test_eval_march_2020_uses_recovery_tools() -> None:
         as_of_date="2020-03-24",
         risk_state=recovery_risk(),
         planner=HeuristicPlanner(),
-        verbose=False,
         max_steps=6,
         overall_deadline_seconds=10,
     )
@@ -68,7 +65,7 @@ def test_eval_march_2020_uses_recovery_tools() -> None:
 
 def test_eval_never_modifies_deterministic_state() -> None:
     original = semi_unwind_risk(monitoring_severity_score=78, score_is_probability=False)
-    result = run_agent(risk_state=original, planner=HeuristicPlanner(), verbose=False)
+    result = run_agent(risk_state=original, planner=HeuristicPlanner())
     assert result.risk_state["monitoring_severity_score"] == 78
     assert result.risk_state["score_is_probability"] is False
     result.state._risk_state["deterministic_trigger_count"] = 99
@@ -82,7 +79,7 @@ def test_eval_never_modifies_deterministic_state() -> None:
 
 
 def test_eval_report_calibration_sections_exist() -> None:
-    result = run_agent(risk_state=semi_unwind_risk(), planner=HeuristicPlanner(), verbose=False)
+    result = run_agent(risk_state=semi_unwind_risk(), planner=HeuristicPlanner())
     for heading in (
         "Current read",
         "Observed:",

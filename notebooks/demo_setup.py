@@ -60,13 +60,15 @@ def run_investigation_demo(mvp_result, max_steps=4, verbose=True):
 
     from src.agent import run_orchestrated_investigation
 
-    return run_orchestrated_investigation(
+    result = run_orchestrated_investigation(
         as_of_date=CONFIG.as_of_date,
         max_steps=max_steps,
-        verbose=verbose,
         mvp_result=mvp_result,
         use_llm=False,
     )
+    if verbose:
+        print(result.report)
+    return result
 
 
 def fmt(value, signed=False):

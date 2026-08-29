@@ -9,7 +9,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field
 
 from src.tools.context import ToolContext
 
@@ -95,17 +95,6 @@ class ToolRegistry:
     def validate_args(self, name: str, args: dict[str, Any]) -> BaseModel:
         spec = self._specs[name]
         return spec.args_model.model_validate(args)
-
-
-class UnknownToolError(KeyError):
-    pass
-
-
-class InvalidToolArgsError(ValueError):
-    def __init__(self, name: str, exc: ValidationError) -> None:
-        self.tool_name = name
-        self.validation_error = exc
-        super().__init__(f"invalid arguments for {name}: {exc}")
 
 
 def default_registry() -> ToolRegistry:

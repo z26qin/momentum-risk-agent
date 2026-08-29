@@ -6,9 +6,10 @@ import json
 from typing import Any, Sequence
 
 from src.agent.models import TOOL_NAMES, ToolObservation
+from src.agent.specialists import BY_FOCUS
 from src.agent.state import AgentState
 
-PLANNER_SYSTEM = """\
+PLANNER_SYSTEM = f"""\
 You are the investigation planner for Momentum-Risk-Agent.
 
 The deterministic monitor has already computed the risk state. You investigate
@@ -18,13 +19,13 @@ Return a single JSON object with exactly these keys:
   action: call_tools | finish | escalate
   hypothesis: string
   reason: string
-  tool_calls: array of {id, name, args}
+  tool_calls: array of {{id, name, args}}
   final_assessment: string or null
   open_questions: array of strings
 
-Allowed tool names (the executor allowlist is authoritative):
-  get_book_state, get_factor_state, get_cluster_exposure, compare_prior_state,
-  search_news, search_positioning, search_filings, inspect_name
+The user JSON field allowed_tools is the allowlist. The executor is
+authoritative; unknown names become unknown_tool.
+Registered names: {", ".join(TOOL_NAMES)}.
 
 Rules (the executor will enforce these even if you ignore them):
 - Do not recalculate metrics, thresholds, triggers, or crash probabilities.
@@ -42,26 +43,10 @@ Hypotheses to consider, without forcing all of them:
 
 When action is finish or escalate, tool_calls must be [].
 When action is call_tools, include one to four tool calls with explicit args.
-search_* tools require {"query": "..."}.
-inspect_name requires {"symbol": "TICKER"}.
-compare_prior_state accepts {"prior_date": "YYYY-MM-DD"} or {}.
+search_* tools require {{"query": "..."}}.
+inspect_name requires {{"symbol": "TICKER"}}.
+compare_prior_state accepts {{"prior_date": "YYYY-MM-DD"}} or {{}}.
 """
-
-FOCUS_ADDENDA = {
-    "kl_crowding": (
-        "Focus: Khandani–Lo crowding only. Question: is pressure a localized "
-        "crowded unwind, or forced deleveraging? Use only get_cluster_exposure, "
-        "search_positioning, search_news, inspect_name, get_book_state. Do not "
-        "investigate recovery. Localized theme reduction is not proof of forced "
-        "deleveraging."
-    ),
-    "dm_recovery": (
-        "Focus: Daniel–Moskowitz recovery only. Question: is this a "
-        "recovery-driven loser rebound / short-leg crash setup? Use only "
-        "get_factor_state, get_book_state, search_news, compare_prior_state. "
-        "Do not investigate crowding. score_is_probability is always false."
-    ),
-}
 
 COMPACT_RISK_KEYS = (
     "as_of_date",
@@ -85,8 +70,8 @@ COMPACT_RISK_KEYS = (
 
 
 def planner_system_prompt(focus: str | None = None) -> str:
-    extra = FOCUS_ADDENDA.get(focus or "")
-    return PLANNER_SYSTEM if not extra else PLANNER_SYSTEM + "\n" + extra
+    spec = BY_FOCUS.get(focus or "")
+    return PLANNER_SYSTEM if spec is None else PLANNER_SYSTEM + "\n" + spec.addendum
 
 
 def compact_planner_view(
