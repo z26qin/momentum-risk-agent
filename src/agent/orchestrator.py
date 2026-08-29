@@ -31,6 +31,8 @@ from src.agent.report import (
 )
 from src.agent.state import fingerprint_risk_state, freeze_risk_state
 from src.agent_prompts import (
+    CROWDING_FLAGS,
+    active_flags,
     crowding_signal_present,
     no_meaningful_risk_signal,
     recovery_setup_present,
@@ -82,7 +84,7 @@ class OrchestratedRunResult:
 def select_specialists(risk_state: Mapping[str, Any]) -> tuple[str, ...]:
     """Deterministic routing. Quiet books spawn nobody — hard invariant."""
 
-    if no_meaningful_risk_signal(risk_state):
+    if no_meaningful_risk_signal(risk_state) or quiet_scorecard(risk_state):
         return ()
     spawned: list[str] = []
     if crowding_signal_present(risk_state):
@@ -90,6 +92,26 @@ def select_specialists(risk_state: Mapping[str, Any]) -> tuple[str, ...]:
     if recovery_setup_present(risk_state):
         spawned.append(RECOVERY)
     return tuple(spawned)
+
+
+def quiet_scorecard(risk_state: Mapping[str, Any]) -> bool:
+    """True when the scorecard is quiet even if ``primary_driver`` is a leftover label.
+
+    January 2024 compact assessments can still say ``primary_driver=crowded_unwind``
+    while triggers are 0, unwind is NORMAL, and crowding flags are unconfirmed.
+    That label must not spawn a search.
+    """
+
+    if int(risk_state.get("deterministic_trigger_count") or 0) > 0:
+        return False
+    if str(risk_state.get("mechanical_unwind_state") or "NORMAL") not in {"NORMAL", "", "None"}:
+        return False
+    flags = active_flags(risk_state)
+    if flags & CROWDING_FLAGS:
+        return False
+    if recovery_setup_present(risk_state):
+        return False
+    return True
 
 
 def run_orchestrated_investigation(
@@ -120,10 +142,11 @@ def run_orchestrated_investigation(
     date = str(frozen.get("as_of_date") or as_of_date)
     prior = copy.deepcopy(dict(prior_state)) if prior_state is not None else None
     spawned = select_specialists(frozen)
+    quiet = no_meaningful_risk_signal(frozen) or quiet_scorecard(frozen)
     routing = {
-        "quiet": no_meaningful_risk_signal(frozen),
-        "crowding_signal": crowding_signal_present(frozen),
-        "recovery_setup": recovery_setup_present(frozen),
+        "quiet": quiet,
+        "crowding_signal": crowding_signal_present(frozen) and not quiet,
+        "recovery_setup": recovery_setup_present(frozen) and not quiet,
         "spawned": list(spawned),
     }
     decisions: list[dict[str, Any]] = [

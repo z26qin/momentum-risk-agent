@@ -217,6 +217,25 @@ def test_select_specialists_quiet_spawns_nobody() -> None:
     assert select_specialists(_quiet_risk()) == ()
 
 
+def test_quiet_primary_driver_label_does_not_spawn_or_search() -> None:
+    """Real 2024-01-05 compact assessments still label primary_driver crowded_unwind."""
+
+    original = _quiet_risk(primary_driver="crowded_unwind")
+    assert select_specialists(original) == ()
+    result = run_orchestrated_investigation(
+        as_of_date="2024-01-05",
+        risk_state=original,
+        crowding_tools=_crowding_mocks(),
+        recovery_tools=_recovery_mocks(),
+        use_llm=False,
+        verbose=False,
+    )
+    assert result.spawned == ()
+    assert result.stop_reason == "NO_INVESTIGATION_NEEDED"
+    assert result.observations == ()
+    assert result.specialist_results == {}
+
+
 def test_quiet_january_2024_spawns_zero_and_does_not_search() -> None:
     original = _quiet_risk()
     _, fingerprint = freeze_risk_state(original)
