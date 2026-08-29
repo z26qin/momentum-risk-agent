@@ -10,45 +10,8 @@ from src.agent.loop import run_agent
 from src.agent.models import AgentDecision, ToolCall
 from src.agent.planner import ScriptedPlanner
 from src.tools.registry import EmptyArgs, SearchArgs, ToolRegistry, ToolSpec
-
-
-def _quiet_risk(**overrides):
-    payload = {
-        "as_of_date": "2024-01-05",
-        "data_cutoff": "2024-01-05T16:00:00-05:00",
-        "overall_risk_state": "bear_low_volatility",
-        "deterministic_trigger_count": 0,
-        "triggered_channels": [],
-        "structural_flags": [],
-        "supported_mechanisms": [],
-        "mechanism_statuses": {
-            "bear_market_recovery_crash": "not_confirmed",
-            "crowded_theme_unwind": "not_confirmed",
-        },
-        "mechanical_unwind_state": "NORMAL",
-        "primary_driver": None,
-        "theme_cluster": [],
-        "score_is_probability": False,
-    }
-    payload.update(overrides)
-    return payload
-
-
-def _crowding_risk(**overrides):
-    return _quiet_risk(
-        as_of_date="2026-05-29",
-        data_cutoff="2026-05-29T16:00:00-04:00",
-        overall_risk_state="normal",
-        deterministic_trigger_count=1,
-        triggered_channels=["portfolio_drawdown"],
-        structural_flags=["crowded_theme_unwind"],
-        supported_mechanisms=["crowded_theme_unwind"],
-        mechanism_statuses={"crowded_theme_unwind": "triggered"},
-        mechanical_unwind_state="FRAGILITY_BUILDING",
-        primary_driver="crowded_unwind",
-        theme_cluster=["CIEN", "COHR", "LITE"],
-        **overrides,
-    )
+from tests.cases import crowding_risk as _crowding_risk
+from tests.cases import quiet_risk as _quiet_risk
 
 
 def _decision(*names: str, **kwargs) -> AgentDecision:
@@ -116,7 +79,6 @@ def test_malformed_planner_output_fails_closed() -> None:
         risk_state=original,
         planner=ScriptedPlanner([{"hypothesis": "oops"}]),
         registry=_registry({"get_book_state": _ok}),
-        verbose=False,
         overall_deadline_seconds=5,
     )
     assert result.stop_reason == "MALFORMED_PLANNER_OUTPUT"
@@ -134,7 +96,6 @@ def test_unknown_tool_becomes_observation() -> None:
             ]
         ),
         registry=_registry({"get_book_state": _ok}),
-        verbose=False,
     )
     assert result.observations[0].status == "error"
     assert result.observations[0].error_type == "unknown_tool"
@@ -156,7 +117,6 @@ def test_invalid_tool_args_do_not_crash() -> None:
             ]
         ),
         registry=_registry({"search_news": _news_docs()}, evidence={"search_news"}),
-        verbose=False,
     )
     assert result.observations[0].error_type == "invalid_args"
     assert result.stop_reason == "EVIDENCE_SUFFICIENT"
@@ -190,7 +150,6 @@ def test_duplicate_tool_call_is_not_reexecuted() -> None:
             ]
         ),
         registry=_registry({"search_news": news}, evidence={"search_news"}),
-        verbose=False,
     )
     statuses = [item.status for item in result.observations]
     assert calls["n"] == 1
@@ -223,7 +182,6 @@ def test_in_batch_duplicate_is_canonicalized() -> None:
             ]
         ),
         registry=_registry({"search_news": news}, evidence={"search_news"}),
-        verbose=False,
     )
     assert calls["n"] == 1
     assert {item.status for item in result.observations} == {"ok", "duplicate"}
@@ -238,7 +196,6 @@ def test_tool_timeout_is_isolated() -> None:
         risk_state=_crowding_risk(),
         planner=ScriptedPlanner([_decision("get_book_state"), _finish()]),
         registry=_registry({"get_book_state": slow}, timeouts={"get_book_state": 0.05}),
-        verbose=False,
         overall_deadline_seconds=3,
     )
     assert result.observations[0].status == "timeout"
@@ -269,7 +226,6 @@ def test_one_parallel_tool_failing_does_not_kill_run() -> None:
             ]
         ),
         registry=_registry({"get_cluster_exposure": ok, "get_book_state": boom}),
-        verbose=False,
     )
     by_name = {item.name: item for item in result.observations}
     assert by_name["get_cluster_exposure"].status == "ok"
@@ -287,7 +243,6 @@ def test_overall_deadline_exceeded() -> None:
         risk_state=_crowding_risk(),
         planner=ScriptedPlanner([_decision("get_book_state")]),
         registry=_registry({"get_book_state": slow}, timeouts={"get_book_state": 5.0}),
-        verbose=False,
         overall_deadline_seconds=0.05,
         max_steps=6,
     )
@@ -325,7 +280,6 @@ def test_post_cutoff_evidence_is_rejected() -> None:
             ]
         ),
         registry=_registry({"search_news": docs}, evidence={"search_news"}),
-        verbose=False,
     )
     payload = result.observations[0].payload
     ids = {item["evidence_id"] for item in payload["documents"]}
@@ -350,7 +304,6 @@ def test_repeated_same_search_stops_without_looping() -> None:
         risk_state=_crowding_risk(),
         planner=ScriptedPlanner([query_decision, query_decision, query_decision]),
         registry=_registry({"search_news": news}, evidence={"search_news"}),
-        verbose=False,
         max_steps=6,
     )
     assert result.stop_reason == "UNRESOLVABLE"
@@ -375,7 +328,6 @@ def test_max_steps_reached() -> None:
                 "get_cluster_exposure": _ok,
             }
         ),
-        verbose=False,
         max_steps=2,
     )
     assert result.stop_reason == "MAX_STEPS"
@@ -393,7 +345,6 @@ def test_trade_language_is_stripped_from_report() -> None:
             ]
         ),
         registry=_registry({"get_book_state": _ok}),
-        verbose=False,
     )
     assert "sell the longs" not in result.report.lower()
     assert "Observed:" in result.report
@@ -415,7 +366,6 @@ def test_llm_planner_accepts_structured_json_only() -> None:
         risk_state=_quiet_risk(),
         planner=LLMPlanner(api_key="test", transport=transport),
         registry=_registry({"get_book_state": _ok}),
-        verbose=False,
     )
     assert result.planner_kind == "llm"
     assert result.stop_reason == "NO_INVESTIGATION_NEEDED"

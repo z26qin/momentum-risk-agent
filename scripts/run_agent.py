@@ -1,10 +1,12 @@
-"""CLI for the planner/executor investigation agent.
+"""CLI for the orchestrated investigation agent.
 
-Example:
+Default path: code orchestrator + two mechanism specialists.
 
-    uv run python scripts/run_agent.py \\
-      --as-of-date 2026-05-29 \\
-      --verbose
+    uv run python scripts/run_agent.py --as-of-date 2026-05-29 --planner heuristic
+
+Quiet control (no specialists):
+
+    uv run python scripts/run_agent.py --as-of-date 2024-01-05 --planner heuristic
 """
 
 from __future__ import annotations
@@ -19,6 +21,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.agent.loop import MAX_STEPS, OVERALL_DEADLINE_SECONDS, run_agent
+from src.agent.orchestrator import run_orchestrated_investigation
 from src.mvp.config import HISTORICAL_EXAMPLE_DATE
 from src.mvp.hermes_monitor import (
     MissingCachedDataError,
@@ -32,8 +35,9 @@ from src.utils.io import REPO_ROOT, load_dotenv_if_present, write_json
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Investigate an already-computed momentum risk state with an LLM "
-            "planner and a deterministic tool executor. Not a trading agent."
+            "Investigate an already-computed momentum risk state. Default is a "
+            "code orchestrator plus crowding/recovery specialists. Not a trading "
+            "agent."
         )
     )
     parser.add_argument("--as-of-date", default=HISTORICAL_EXAMPLE_DATE, metavar="YYYY-MM-DD")
@@ -45,12 +49,25 @@ def _build_parser() -> argparse.ArgumentParser:
         default=OVERALL_DEADLINE_SECONDS,
     )
     parser.add_argument(
+        "--mode",
+        choices=("orchestrated", "single"),
+        default="orchestrated",
+        help=(
+            "orchestrated (default): code router + two mechanism monitors. "
+            "single: original one-planner loop."
+        ),
+    )
+    parser.add_argument(
         "--planner",
         choices=("auto", "llm", "heuristic"),
         default="auto",
         help="auto uses DeepSeek when DEEPSEEK_API_KEY is set, else heuristic",
     )
-    parser.add_argument("--verbose", action="store_true")
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Also print stop reason and spawned specialists to stderr",
+    )
     parser.add_argument(
         "--save-trace",
         default=None,
@@ -75,8 +92,8 @@ def main() -> int:
     except MissingCachedDataError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
-    except (FileNotFoundError, ValueError) as exc:
-        print(f"error: {exc}", file=sys.stderr)
+    except (FileNotFoundError, ValueError) as exec_exc:
+        print(f"error: {exec_exc}", file=sys.stderr)
         return 1
 
     use_llm = None
@@ -85,22 +102,36 @@ def main() -> int:
     elif args.planner == "heuristic":
         use_llm = False
 
-    result = run_agent(
-        as_of_date=args.as_of_date,
-        max_steps=args.max_steps,
-        verbose=args.verbose,
-        overall_deadline_seconds=args.deadline_seconds,
-        risk_state=assessment,
-        prior_state=prior,
-        use_llm=use_llm,
-    )
-    if not args.verbose:
-        print(result.report)
+    if args.mode == "single":
+        result = run_agent(
+            as_of_date=args.as_of_date,
+            max_steps=args.max_steps,
+            overall_deadline_seconds=args.deadline_seconds,
+            risk_state=assessment,
+            prior_state=prior,
+            use_llm=use_llm,
+        )
+        trace = result.trace
+    else:
+        result = run_orchestrated_investigation(
+            as_of_date=args.as_of_date,
+            max_steps=args.max_steps,
+            overall_deadline_seconds=args.deadline_seconds,
+            risk_state=assessment,
+            prior_state=prior,
+            use_llm=use_llm,
+        )
+        trace = result.trace
+
+    print(result.report)
+    if args.verbose:
+        spawned = getattr(result, "spawned", ())
+        print(f"# stop={result.stop_reason} spawned={list(spawned)}", file=sys.stderr)
     if args.save_trace:
         path = Path(args.save_trace)
         if not path.is_absolute():
             path = REPO_ROOT / path
-        write_json(path, json.loads(result.trace.model_dump_json()))
+        write_json(path, json.loads(trace.model_dump_json()))
         print(f"# wrote {path}", file=sys.stderr)
     return 0
 

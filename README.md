@@ -13,49 +13,35 @@ It answers:
 
 It does **not** trade, de-gross, or publish a crash probability.
 
-This repository is a **new project** cloned from [`momentum-tail-risk-monitor`](https://github.com/z26qin/momentum-tail-risk-monitor). The quantitative engine, evidence cutoff, fail-closed behavior, and PM-facing calibration are preserved. The architectural upgrade is the investigation loop:
+This is a **new project**. It inherits the quantitative engine from [`momentum-tail-risk-monitor`](https://github.com/z26qin/momentum-tail-risk-monitor) — evidence cutoff, fail-closed behavior, and PM-facing calibration. It does not keep that repo's test farm or the old pre-programmed investigation loop.
 
-> **Model plans. Executor enforces invariants.**
+> **Model plans. Executor enforces. Orchestrator routes in code.**
 
 ---
 
-## Original system
+## Architecture
 
 ```text
-deterministic monitor
-        ↓
-mostly fixed investigation workflow
-        ↓
-PM note
-```
-
-The original loop in `src/agent/heuristic.py` still exists (compatibility tests and notebook path). It chooses among a small, pre-programmed set of mechanism searches.
-
-## New system
-
-```text
-deterministic monitor
+deterministic monitor (inherited engine)
         ↓
 immutable RiskState
         ↓
-AgentState
+Orchestrator  (CODE: which specialists, if any)
         ↓
-LLM planner  →  structured AgentDecision
+   asyncio.wait + to_thread(run_agent)
+   shared wall-clock deadline
+   ┌────┴────┐
+   ↓         ↓
+KL crowding  DM recovery
+run_agent()  run_agent()
+subset tools subset tools
         ↓
-deterministic executor  (allowlist, args, timeout, dedup, cutoff)
-        ↓
-validated tool observations
-        ↓
-AgentState update
-        ↓
-LLM planner
-        ↓
-...
-        ↓
-FINISH / ESCALATE  →  calibrated PM note + audit trace
+one calibrated PM note (CODE synthesis; never a crash score)
 ```
 
-The quantitative engine remains the source of truth. The agent investigates the state; it does not change it.
+No LangGraph / CrewAI / AutoGen. Specialists do not talk to each other; they overlap on one shared deadline. Quiet books spawn **nobody**.
+
+`--mode single` is the same `run_agent()` loop with the full tool registry (used by specialists and demos).
 
 ---
 
@@ -83,141 +69,42 @@ Not confirmed:
 - Broad forced deleveraging / financing stress
 
 Investigation path:
-1. localized crowded unwind · tools=['get_cluster_exposure', 'search_positioning', 'search_news']
-2. forced deleveraging still unconfirmed · tools=['inspect_name']
-3. STOP: EVIDENCE_SUFFICIENT
-
-What changed:
-- Deterministic snapshot already compared with 2026-04-30; this investigation did not recompute that delta.
-
-Next useful check:
-- Watch whether selling spreads outside the cluster.
+1. Orchestrator spawned: crowding
+2. [crowding] localized crowded unwind · tools=['get_cluster_exposure', 'search_positioning', 'search_news']
+3. [crowding] forced deleveraging still unconfirmed · tools=['inspect_name']
+4. [crowding] STOP: EVIDENCE_SUFFICIENT
+5. Combined STOP: EVIDENCE_SUFFICIENT
 ```
 
-Same rules on two other dates: [March 2020](outputs/march_2020_reference/pm_case_read.md) is a recovery-crash reference; [January 2024](outputs/quiet_control_2024/pm_case_read.md) should not escalate. Cross-case table: [`outputs/cross_case_comparison.md`](outputs/cross_case_comparison.md).
-
----
-
-## Architecture
-
-```text
-                         ┌──────────── MVPConfig ────────────┐
-                         │ as_of · compare_to · horizon · LLM │
-                         └────────────────┬──────────────────┘
-                                          ▼
-                                   run_mvp() / compact assessment
-                                          │
-                                          ▼
-                              Immutable risk snapshot
-                                          │
-                                          ▼
-                    run_agent()  — hand-written loop, no LangGraph
-                                          │
-              ┌───────────────────────────┼───────────────────────────┐
-              ▼                           ▼                           ▼
-     LLM / heuristic planner      deterministic executor        calibrated PM note
-     structured AgentDecision     allowlisted read-only tools   + AgentRunTrace
-```
-
-There is no multi-agent framework. One planner, one executor, one bounded loop.
+[March 2020](outputs/march_2020_reference/pm_case_read.md) is a recovery-crash reference. [January 2024](outputs/quiet_control_2024/pm_case_read.md) should not escalate — leftover `primary_driver` labels do not spawn a search. Cross-case table: [`outputs/cross_case_comparison.md`](outputs/cross_case_comparison.md).
 
 ---
 
 ## Agent / tool contracts
 
-All executable actions come through validated structured output (`src/agent/models.py`). Free-form model text is never parsed to decide what runs.
+Executable actions come only from a validated `AgentDecision` (`src/agent/models.py`). The orchestrator itself does not call market or evidence tools.
 
-```python
-class ToolCall(BaseModel):
-    id: str
-    name: str   # allowlisted by the executor, not by the prompt alone
-    args: dict[str, Any]
+| Monitor | Question | Allowlist |
+|---|---|---|
+| Khandani–Lo crowding | Localized crowded unwind, or forced deleveraging? | `get_cluster_exposure`, `search_positioning`, `search_news`, `inspect_name`, `get_book_state` |
+| Daniel–Moskowitz recovery | Recovery-driven loser rebound / lagging-leg crash setup? | `get_factor_state`, `get_book_state`, `search_news`, `compare_prior_state` |
 
-class AgentDecision(BaseModel):
-    action: Literal["call_tools", "finish", "escalate"]
-    hypothesis: str
-    reason: str
-    tool_calls: list[ToolCall] = []
-    final_assessment: str | None = None
-    open_questions: list[str] = []
-```
-
-Read-only tools (`src/tools/`):
-
-| Tool | Role |
-|---|---|
-| `get_book_state` | Deterministic current PM-book risk snapshot |
-| `get_factor_state` | UMD / regime / recovery state |
-| `get_cluster_exposure` | Concentration / theme / long-short pressure |
-| `compare_prior_state` | Compare with a previously loaded compact assessment |
-| `search_news` | Point-in-time public news (GDELT + frozen packs) |
-| `search_positioning` | Crowding / positioning *proxies* from bundled sources |
-| `search_filings` | Bundled earnings / IR notes (not live EDGAR) |
-| `inspect_name` | Drill into one ticker against holdings + cluster |
-
-If the original repo cannot support a tool with live institutional data, the adapter says so and returns what the bundled pack actually contains. Missing evidence stays missing.
+A specialist that requests a tool outside its registry gets `unknown_tool`. Full registry: `src/tools/`.
 
 ---
 
 ## Safety invariants (enforced in Python)
 
-1. The agent cannot modify deterministic risk metrics.
-2. The agent cannot modify thresholds or triggers.
-3. The agent cannot convert qualitative evidence into a crash probability.
-4. Evidence published after the assessment cutoff is rejected.
-5. Missing evidence remains missing.
-6. The agent cannot recommend or execute a trade (trade language is stripped from the note).
-7. The LLM cannot override quantitative state.
-8. The loop is bounded (`MAX_STEPS = 6`).
-9. Tool access is allowlisted. Unknown tools become error observations.
-10. Final output distinguishes **observed / inferred / against / not confirmed**.
+1. The agent cannot modify deterministic risk metrics, thresholds, or triggers.
+2. Qualitative evidence cannot become a crash score. `score_is_probability` stays false.
+3. Evidence published after the assessment cutoff is rejected.
+4. Missing evidence remains missing.
+5. Trade language is stripped from the note.
+6. Quiet books spawn zero specialists (`NO_INVESTIGATION_NEEDED`). Routing uses flags, not leftover `primary_driver` labels.
+7. Each specialist loop is bounded (`MAX_STEPS = 6`). Independent specialists overlap via `asyncio.wait` + `to_thread(run_agent)` on one shared wall-clock deadline (`OVERALL_DEADLINE_SECONDS = 10`), not leftover time from the previous specialist.
+8. Final output distinguishes **observed / inferred / against / not confirmed**. Mechanism notes are not averaged.
 
 Prompts restate these rules. They are not the control plane.
-
-Executor also enforces: argument validation, per-tool timeout, overall investigation deadline (`OVERALL_DEADLINE_SECONDS = 10`), parallel independent reads in one planner step, canonical-arg dedup, and failure isolation (one broken read does not kill the run).
-
----
-
-## One example trace
-
-```text
-Step 1
-hypothesis=localized crowded unwind
-tools=['get_cluster_exposure', 'search_positioning', 'search_news']
-
-Step 1 results
-  get_cluster_exposure status=ok
-  search_positioning status=ok
-  search_news status=ok
-
-Step 2
-hypothesis=forced deleveraging still unconfirmed
-tools=['inspect_name']
-
-Step 2 results
-  inspect_name status=ok COHR
-
-STOP: EVIDENCE_SUFFICIENT
-```
-
-`AgentRunTrace` records `run_id`, `as_of_date`, `assessment_cutoff`, decisions, tool calls, tool results, errors, `stop_reason`, and the calibrated buckets. It does not store hidden chain-of-thought or API keys.
-
----
-
-## Failure handling
-
-| Failure | Behavior |
-|---|---|
-| Malformed planner JSON | Stop `MALFORMED_PLANNER_OUTPUT`; no tools run from that text |
-| Unknown tool | Observation `error_type=unknown_tool`; loop continues |
-| Invalid arguments | Observation `error_type=invalid_args`; no crash |
-| Duplicate read | Observation `status=duplicate`; not re-executed |
-| Tool timeout | Observation `status=timeout`; other parallel reads may still succeed |
-| One parallel tool raises | Isolated `tool_exception`; siblings still return |
-| Overall deadline | Stop `DEADLINE_EXCEEDED` |
-| Post-cutoff document | Dropped; `discarded_post_cutoff` counted; content never enters the note |
-| Planner repeats the same search | Duplicate observation, then `UNRESOLVABLE` |
-| Max steps | Stop `MAX_STEPS` |
 
 ---
 
@@ -227,57 +114,59 @@ Requirements: Python **3.11–3.14** and [`uv`](https://docs.astral.sh/uv/).
 
 ```bash
 uv sync --locked --all-groups
-uv run python -m src.mvp.demo_smoke_test
 uv run pytest -q
-uv run python scripts/run_agent.py \
-  --as-of-date 2026-05-29 \
-  --verbose
+uv run python scripts/run_agent.py --as-of-date 2026-05-29 --planner heuristic
+uv run python scripts/run_agent.py --as-of-date 2024-01-05 --planner heuristic
 ```
 
-`--planner auto` (default) uses DeepSeek when `DEEPSEEK_API_KEY` is set, otherwise the fail-closed heuristic planner. Both emit the same `AgentDecision` schema. The executor does not care which planner produced it.
+`--planner auto` uses DeepSeek when `DEEPSEEK_API_KEY` is set, otherwise the fail-closed heuristic planner. Both emit the same `AgentDecision` schema.
+
+Inherited monitor demo (not part of the default pytest suite):
+
+```bash
+uv run python -m src.mvp.demo_smoke_test
+uv run python scripts/run_monitor.py
+```
 
 ```python
-from src.agent import run_agent
+from src.agent import run_orchestrated_investigation
 
-result = run_agent(as_of_date="2026-05-29", verbose=True)
+result = run_orchestrated_investigation(as_of_date="2026-05-29")
+print(result.spawned, result.trace.stop_reason)
 print(result.report)
-print(result.trace.stop_reason)
 ```
-
-The deterministic monitor CLI is unchanged: `scripts/run_monitor.py`.
 
 ---
 
-## Eval cases
+## Tests
 
-Small behavior suite on frozen-case shaped states (`tests/agent/test_evals.py`):
+This repo tests the **investigation agent**, not the original monitor's regression farm.
 
-| Case | Date | Expectation |
-|---|---|---|
-| Semi-unwind | 2026-05-29 | Crowding-related tools; terminates; no state mutation |
-| Recovery-crash reference | 2020-03-24 | Factor / news tools; `score_is_probability` stays false |
-| Quiet control | 2024-01-05 | No evidence search; `NO_INVESTIGATION_NEEDED` |
-
-Plus explicit failure tests in `tests/agent/test_executor_failures.py`. Most tests inject a scripted or heuristic planner. A live LLM eval is optional.
+| Suite | What it locks |
+|---|---|
+| `tests/agent/test_executor_failures.py` | malformed JSON, unknown tool, invalid args, timeout, cutoff, deadline |
+| `tests/agent/test_evals.py` | quiet / semi-unwind / recovery single-loop behavior |
+| `tests/agent/test_orchestrator.py` | routing, specialist isolation, one combined note |
+| `tests/monitor/test_engine.py` | leftover driver is not a signal; cutoff; relative severity |
 
 ---
 
 ## Limitations
 
-- This is an **investigation agent**, not a trading agent.
-- Positioning and filings tools wrap **bundled / local** evidence. They do not observe prime-broker leverage or pull live EDGAR.
-- `search_news` is the dated GDELT panel plus frozen case packs, not a live web crawl.
-- Monitoring severity is a relative band. It is **not** a crash probability.
-- The demo book is an equal-weight S&P 500 12-1 long-10 / short-10 proxy, not a live institutional book.
-- Without `DEEPSEEK_API_KEY`, the planner falls back to a small heuristic that still goes through the executor.
+- Investigation agent, not a trading agent.
+- Specialists do not debate, vote, or chat.
+- Positioning and filings wrap **bundled / local** evidence.
+- `search_news` is dated GDELT plus frozen packs, not a live crawl.
+- Monitoring severity is a relative band, not a crash probability.
+- Demo book is an equal-weight S&P 500 12-1 long-10 / short-10 proxy.
 
-Fuller product caveats: [`docs/limitations.md`](docs/limitations.md). Methodology: [`docs/methodology.md`](docs/methodology.md).
+[`docs/limitations.md`](docs/limitations.md) · [`docs/methodology.md`](docs/methodology.md)
 
 ---
 
 ## Mechanisms
 
-The agent may investigate these lenses separately. It does not merge them into one opaque score.
+Investigated separately. Never merged into one opaque score.
 
 **Daniel–Moskowitz recovery crash:** deep prior drawdown → rapid recovery → loser rebound → short-leg pain.
 
@@ -289,14 +178,14 @@ The agent may investigate these lenses separately. It does not merge them into o
 
 ```text
 momentum-risk-agent/
-├── src/agent/           # planner, executor, loop, contracts, PM note
-│   └── heuristic.py     # original pre-programmed loop (compatibility)
-├── src/tools/           # read-only tool adapters
-├── src/mvp/             # deterministic monitor, evidence card, PM response
-├── src/monitoring/      # scorecard, unwind, crowding proxies
-├── scripts/run_agent.py # investigation CLI
+├── src/agent/           # orchestrator, planner, executor, loop, PM note
+├── src/tools/           # read-only adapters + specialist subsets
+├── src/mvp/             # inherited deterministic monitor
+├── src/monitoring/      # inherited scorecard / unwind / crowding proxies
+├── scripts/run_agent.py
 ├── scripts/run_monitor.py
-└── tests/agent/         # failure tests + frozen-case evals
+├── tests/agent/         # this project's tests
+└── tests/monitor/       # thin inherited-engine smoke
 ```
 
 ---

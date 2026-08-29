@@ -11,8 +11,8 @@ uv run python -m pytest -q
 Expected:
 
 - smoke output contains `"status": "ready"`;
-- default card run ID `53c34aa57bb437fc`;
-- full run fingerprint `750f22225b7d9592`.
+- default pytest is the investigation-agent suite plus a thin engine smoke
+  (the original monitor regression farm is not in this repo).
 
 Open:
 

@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Mapping, Sequence
+from typing import Any, Sequence
 
 from src.agent.models import TOOL_NAMES, ToolObservation
+from src.agent.specialists import BY_FOCUS
 from src.agent.state import AgentState
 
-PLANNER_SYSTEM = """\
+PLANNER_SYSTEM = f"""\
 You are the investigation planner for Momentum-Risk-Agent.
 
 The deterministic monitor has already computed the risk state. You investigate
@@ -18,13 +19,13 @@ Return a single JSON object with exactly these keys:
   action: call_tools | finish | escalate
   hypothesis: string
   reason: string
-  tool_calls: array of {id, name, args}
+  tool_calls: array of {{id, name, args}}
   final_assessment: string or null
   open_questions: array of strings
 
-Allowed tool names:
-  get_book_state, get_factor_state, get_cluster_exposure, compare_prior_state,
-  search_news, search_positioning, search_filings, inspect_name
+The user JSON field allowed_tools is the allowlist. The executor is
+authoritative; unknown names become unknown_tool.
+Registered names: {", ".join(TOOL_NAMES)}.
 
 Rules (the executor will enforce these even if you ignore them):
 - Do not recalculate metrics, thresholds, triggers, or crash probabilities.
@@ -42,10 +43,10 @@ Hypotheses to consider, without forcing all of them:
 
 When action is finish or escalate, tool_calls must be [].
 When action is call_tools, include one to four tool calls with explicit args.
-search_* tools require {"query": "..."}.
-inspect_name requires {"symbol": "TICKER"}.
+search_* tools require {{"query": "..."}}.
+inspect_name requires {{"symbol": "TICKER"}}.
+compare_prior_state accepts {{"prior_date": "YYYY-MM-DD"}} or {{}}.
 """
-
 
 COMPACT_RISK_KEYS = (
     "as_of_date",
@@ -68,24 +69,45 @@ COMPACT_RISK_KEYS = (
 )
 
 
-def compact_planner_view(state: AgentState) -> dict[str, Any]:
+def planner_system_prompt(focus: str | None = None) -> str:
+    spec = BY_FOCUS.get(focus or "")
+    return PLANNER_SYSTEM if spec is None else PLANNER_SYSTEM + "\n" + spec.addendum
+
+
+def compact_planner_view(
+    state: AgentState,
+    *,
+    allowed_tools: Sequence[str] | None = None,
+    focus: str | None = None,
+) -> dict[str, Any]:
     risk = state.risk_state
     compact_risk = {key: risk.get(key) for key in COMPACT_RISK_KEYS}
     compact_risk["score_is_probability"] = False
+    tools = list(allowed_tools) if allowed_tools is not None else list(TOOL_NAMES)
     return {
         "risk_state": compact_risk,
+        "focus": focus or state.focus,
         "prior_observations": [_compact_observation(item) for item in state.observations[-12:]],
         "investigated_hypotheses": list(state.investigated_hypotheses),
         "tool_history": list(sorted(state.executed_keys)),
         "open_questions": list(state.open_questions),
         "remaining_steps": max(0, state.max_steps - state.step),
         "remaining_deadline_seconds": round(max(0.0, state.remaining_seconds), 2),
-        "allowed_tools": list(TOOL_NAMES),
+        "allowed_tools": tools,
     }
 
 
-def format_planner_user(state: AgentState) -> str:
-    return json.dumps(compact_planner_view(state), default=str, sort_keys=True)
+def format_planner_user(
+    state: AgentState,
+    *,
+    allowed_tools: Sequence[str] | None = None,
+    focus: str | None = None,
+) -> str:
+    return json.dumps(
+        compact_planner_view(state, allowed_tools=allowed_tools, focus=focus),
+        default=str,
+        sort_keys=True,
+    )
 
 
 def _compact_observation(item: ToolObservation) -> dict[str, Any]:

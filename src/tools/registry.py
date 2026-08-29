@@ -9,7 +9,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field
 
 from src.tools.context import ToolContext
 
@@ -56,6 +56,21 @@ class ToolSpec:
     description: str = ""
 
 
+CROWDING_TOOL_NAMES = (
+    "get_cluster_exposure",
+    "search_positioning",
+    "search_news",
+    "inspect_name",
+    "get_book_state",
+)
+RECOVERY_TOOL_NAMES = (
+    "get_factor_state",
+    "get_book_state",
+    "search_news",
+    "compare_prior_state",
+)
+
+
 class ToolRegistry:
     def __init__(self, specs: Sequence[ToolSpec]) -> None:
         self._specs = {spec.name: spec for spec in specs}
@@ -66,20 +81,20 @@ class ToolRegistry:
     def names(self) -> tuple[str, ...]:
         return tuple(self._specs)
 
+    def subset(self, names: Sequence[str]) -> ToolRegistry:
+        """Allowlisted specialist registry. Unknown names stay unregistered."""
+
+        specs: list[ToolSpec] = []
+        for name in names:
+            spec = self._specs.get(name)
+            if spec is None:
+                raise KeyError(f"tool {name!r} is not registered")
+            specs.append(spec)
+        return ToolRegistry(specs)
+
     def validate_args(self, name: str, args: dict[str, Any]) -> BaseModel:
         spec = self._specs[name]
         return spec.args_model.model_validate(args)
-
-
-class UnknownToolError(KeyError):
-    pass
-
-
-class InvalidToolArgsError(ValueError):
-    def __init__(self, name: str, exc: ValidationError) -> None:
-        self.tool_name = name
-        self.validation_error = exc
-        super().__init__(f"invalid arguments for {name}: {exc}")
 
 
 def default_registry() -> ToolRegistry:
@@ -148,3 +163,15 @@ def default_registry() -> ToolRegistry:
             ),
         ]
     )
+
+
+def crowding_registry(base: ToolRegistry | None = None) -> ToolRegistry:
+    """Khandani–Lo crowding monitor: cluster, positioning, news, name, book."""
+
+    return (base or default_registry()).subset(CROWDING_TOOL_NAMES)
+
+
+def recovery_registry(base: ToolRegistry | None = None) -> ToolRegistry:
+    """Daniel–Moskowitz recovery monitor: factor, book, news, prior comparison."""
+
+    return (base or default_registry()).subset(RECOVERY_TOOL_NAMES)
