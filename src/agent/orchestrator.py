@@ -1,14 +1,17 @@
 """Code-first orchestrator over two mechanism-specialist monitors.
 
-Routing is Python. Specialists do not talk to each other. Findings are never
-merged into a crash score.
+Routing is Python. Independent specialists overlap on a shared wall-clock
+deadline via ``asyncio.wait`` + ``asyncio.to_thread(run_agent)``. They do
+not talk to each other. Findings are never merged into a crash score.
 """
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any, Callable, Mapping, Sequence
 
@@ -39,6 +42,7 @@ SPECIALIST_LABELS = {
     CROWDING: "Crowding (Khandani–Lo)",
     RECOVERY: "Recovery (Daniel–Moskowitz)",
 }
+DEFAULT_REGISTRIES = {CROWDING: crowding_registry, RECOVERY: recovery_registry}
 
 
 @dataclass(frozen=True)
@@ -86,6 +90,51 @@ def run_orchestrated_investigation(
     monotonic: Monotonic = time.monotonic,
     processed_dir=DEFAULT_PROCESSED_DIR,
 ) -> OrchestratedRunResult:
+    """Sync CLI/test entry. Nested event loops run the coroutine in a side thread."""
+
+    def _factory() -> Any:
+        return run_orchestrated_investigation_async(
+            as_of_date,
+            max_steps,
+            verbose,
+            overall_deadline_seconds=overall_deadline_seconds,
+            risk_state=risk_state,
+            prior_state=prior_state,
+            mvp_result=mvp_result,
+            crowding_planner=crowding_planner,
+            recovery_planner=recovery_planner,
+            crowding_tools=crowding_tools,
+            recovery_tools=recovery_tools,
+            use_llm=use_llm,
+            monotonic=monotonic,
+            processed_dir=processed_dir,
+        )
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(_factory())
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(lambda: asyncio.run(_factory())).result()
+
+
+async def run_orchestrated_investigation_async(
+    as_of_date: str = "2026-05-29",
+    max_steps: int = MAX_STEPS,
+    verbose: bool = False,
+    *,
+    overall_deadline_seconds: float = OVERALL_DEADLINE_SECONDS,
+    risk_state: Mapping[str, Any] | None = None,
+    prior_state: Mapping[str, Any] | None = None,
+    mvp_result: Any | None = None,
+    crowding_planner: Planner | None = None,
+    recovery_planner: Planner | None = None,
+    crowding_tools: ToolRegistry | None = None,
+    recovery_tools: ToolRegistry | None = None,
+    use_llm: bool | None = None,
+    monotonic: Monotonic = time.monotonic,
+    processed_dir=DEFAULT_PROCESSED_DIR,
+) -> OrchestratedRunResult:
     loaded = _load_risk_state(as_of_date, risk_state=risk_state, mvp_result=mvp_result)
     frozen, fingerprint = freeze_risk_state(loaded)
     cutoff = str(
@@ -96,11 +145,14 @@ def run_orchestrated_investigation(
     prior = copy.deepcopy(dict(prior_state)) if prior_state is not None else None
     spawned = select_specialists(frozen)
     quiet = no_meaningful_risk_signal(frozen)
+    deadline = float(overall_deadline_seconds)
     routing = {
         "quiet": quiet,
         "crowding_signal": CROWDING in spawned,
         "recovery_setup": RECOVERY in spawned,
         "spawned": list(spawned),
+        "schedule": "parallel_shared_deadline",
+        "deadline_seconds": deadline,
     }
     decisions: list[dict[str, Any]] = [
         {
@@ -108,58 +160,30 @@ def run_orchestrated_investigation(
             "action": "spawn" if spawned else "skip",
             "specialists": list(spawned),
             "reason": "NO_INVESTIGATION_NEEDED" if quiet else "deterministic_flags",
+            "schedule": routing["schedule"],
         }
     ]
     if verbose:
-        print(f"Orchestrator: spawned={list(spawned)}\n")
+        print(f"Orchestrator: spawned={list(spawned)} schedule=parallel_shared_deadline\n")
 
-    specialist_results: dict[str, AgentRunResult] = {}
-    started = monotonic()
     planners = {CROWDING: crowding_planner, RECOVERY: recovery_planner}
     registries = {CROWDING: crowding_tools, RECOVERY: recovery_tools}
-    defaults = {CROWDING: crowding_registry, RECOVERY: recovery_registry}
-
-    for name in spawned:
-        remaining = float(overall_deadline_seconds) - (monotonic() - started)
-        if remaining <= 0:
-            decisions.append(
-                {"actor": "orchestrator", "action": "skip", "specialist": name, "reason": "DEADLINE_EXCEEDED"}
-            )
-            continue
-        registry = registries[name] if registries[name] is not None else defaults[name]()
-        planner = resolve_planner(
-            planner=planners[name],
-            use_llm=use_llm,
-            focus=SPECIALIST_FOCUS[name],
-            allowed_tools=registry.names(),
-        )
-        if verbose:
-            print(f"=== {SPECIALIST_LABELS[name]} ===\n")
-        result = run_agent(
-            as_of_date=date,
-            max_steps=max_steps,
-            verbose=verbose,
-            print_report=False,
-            overall_deadline_seconds=remaining,
-            risk_state=frozen,
-            prior_state=prior,
-            planner=planner,
-            registry=registry,
-            focus=SPECIALIST_FOCUS[name],
-            monotonic=monotonic,
-            processed_dir=processed_dir,
-            run_id=f"{run_id}-{name[:3]}",
-        )
-        specialist_results[name] = result
-        decisions.append(
-            {
-                "actor": name,
-                "action": "completed",
-                "stop_reason": result.stop_reason,
-                "steps": result.state.step,
-                "tools": [item.name for item in result.observations],
-            }
-        )
+    specialist_results, spawn_decisions = await _run_specialists_parallel(
+        spawned,
+        deadline=deadline,
+        date=date,
+        max_steps=max_steps,
+        verbose=verbose,
+        frozen=frozen,
+        prior=prior,
+        planners=planners,
+        registries=registries,
+        use_llm=use_llm,
+        monotonic=monotonic,
+        processed_dir=processed_dir,
+        run_id=run_id,
+    )
+    decisions.extend(spawn_decisions)
 
     if fingerprint_risk_state(frozen) != fingerprint:
         raise RuntimeError("invariant violated: deterministic risk state changed")
@@ -212,6 +236,131 @@ def run_orchestrated_investigation(
         specialist_results=specialist_results,
         observations=observations,
         routing=routing,
+    )
+
+
+async def _run_specialists_parallel(
+    spawned: Sequence[str],
+    *,
+    deadline: float,
+    date: str,
+    max_steps: int,
+    verbose: bool,
+    frozen: Mapping[str, Any],
+    prior: dict[str, Any] | None,
+    planners: Mapping[str, Planner | None],
+    registries: Mapping[str, ToolRegistry | None],
+    use_llm: bool | None,
+    monotonic: Monotonic,
+    processed_dir: Any,
+    run_id: str,
+) -> tuple[dict[str, AgentRunResult], list[dict[str, Any]]]:
+    """Every specialist gets the same wall-clock budget. No leftover crumbs."""
+
+    if not spawned:
+        return {}, []
+    tasks = {
+        name: asyncio.create_task(
+            asyncio.to_thread(
+                _run_one_specialist,
+                name,
+                date=date,
+                max_steps=max_steps,
+                verbose=verbose,
+                deadline=deadline,
+                frozen=frozen,
+                prior=prior,
+                planner=planners.get(name),
+                registry=registries.get(name),
+                use_llm=use_llm,
+                monotonic=monotonic,
+                processed_dir=processed_dir,
+                run_id=run_id,
+            ),
+            name=f"specialist-{name}",
+        )
+        for name in spawned
+    }
+    _done, pending = await asyncio.wait(set(tasks.values()), timeout=max(0.01, deadline))
+    results: dict[str, AgentRunResult] = {}
+    extra: list[dict[str, Any]] = []
+    for name in spawned:
+        task = tasks[name]
+        if task in pending:
+            task.cancel()
+            extra.append(
+                {
+                    "actor": "orchestrator",
+                    "action": "skip",
+                    "specialist": name,
+                    "reason": "DEADLINE_EXCEEDED",
+                }
+            )
+            continue
+        try:
+            result = task.result()
+        except Exception as exc:  # noqa: BLE001 - isolate one specialist
+            extra.append(
+                {
+                    "actor": name,
+                    "action": "failed",
+                    "reason": "UNRESOLVABLE",
+                    "error": str(exc),
+                }
+            )
+            continue
+        results[name] = result
+        extra.append(
+            {
+                "actor": name,
+                "action": "completed",
+                "stop_reason": result.stop_reason,
+                "steps": result.state.step,
+                "tools": [item.name for item in result.observations],
+            }
+        )
+    return results, extra
+
+
+def _run_one_specialist(
+    name: str,
+    *,
+    date: str,
+    max_steps: int,
+    verbose: bool,
+    deadline: float,
+    frozen: Mapping[str, Any],
+    prior: dict[str, Any] | None,
+    planner: Planner | None,
+    registry: ToolRegistry | None,
+    use_llm: bool | None,
+    monotonic: Monotonic,
+    processed_dir: Any,
+    run_id: str,
+) -> AgentRunResult:
+    tools = registry if registry is not None else DEFAULT_REGISTRIES[name]()
+    selected = resolve_planner(
+        planner=planner,
+        use_llm=use_llm,
+        focus=SPECIALIST_FOCUS[name],
+        allowed_tools=tools.names(),
+    )
+    if verbose:
+        print(f"=== {SPECIALIST_LABELS[name]} ===\n")
+    return run_agent(
+        as_of_date=date,
+        max_steps=max_steps,
+        verbose=verbose,
+        print_report=False,
+        overall_deadline_seconds=deadline,
+        risk_state=copy.deepcopy(dict(frozen)),
+        prior_state=copy.deepcopy(prior) if prior is not None else None,
+        planner=selected,
+        registry=tools,
+        focus=SPECIALIST_FOCUS[name],
+        monotonic=monotonic,
+        processed_dir=processed_dir,
+        run_id=f"{run_id}-{name[:3]}",
     )
 
 

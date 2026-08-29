@@ -28,6 +28,8 @@ immutable RiskState
         ↓
 Orchestrator  (CODE: which specialists, if any)
         ↓
+   asyncio.wait + to_thread(run_agent)
+   shared wall-clock deadline
    ┌────┴────┐
    ↓         ↓
 KL crowding  DM recovery
@@ -37,7 +39,7 @@ subset tools subset tools
 one calibrated PM note (CODE synthesis; never a crash score)
 ```
 
-No LangGraph / CrewAI / AutoGen. Specialists do not talk to each other. Quiet books spawn **nobody**.
+No LangGraph / CrewAI / AutoGen. Specialists do not talk to each other; they overlap on one shared deadline. Quiet books spawn **nobody**.
 
 `--mode single` is the same `run_agent()` loop with the full tool registry (used by specialists and demos).
 
@@ -99,7 +101,7 @@ A specialist that requests a tool outside its registry gets `unknown_tool`. Full
 4. Missing evidence remains missing.
 5. Trade language is stripped from the note.
 6. Quiet books spawn zero specialists (`NO_INVESTIGATION_NEEDED`). Routing uses flags, not leftover `primary_driver` labels.
-7. Each specialist loop is bounded (`MAX_STEPS = 6`); specialists share one deadline (`OVERALL_DEADLINE_SECONDS = 10`).
+7. Each specialist loop is bounded (`MAX_STEPS = 6`). Independent specialists overlap via `asyncio.wait` + `to_thread(run_agent)` on one shared wall-clock deadline (`OVERALL_DEADLINE_SECONDS = 10`), not leftover time from the previous specialist.
 8. Final output distinguishes **observed / inferred / against / not confirmed**. Mechanism notes are not averaged.
 
 Prompts restate these rules. They are not the control plane.

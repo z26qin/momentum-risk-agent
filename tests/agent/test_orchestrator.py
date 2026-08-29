@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 from src.agent.models import AgentDecision, ToolCall
 from src.agent.orchestrator import run_orchestrated_investigation, select_specialists
 from src.agent.planner import HeuristicPlanner, ScriptedPlanner
@@ -280,3 +282,65 @@ def test_risk_state_fingerprint_unchanged() -> None:
     assert result.risk_state["score_is_probability"] is False
     for specialist in result.specialist_results.values():
         specialist.state.assert_risk_unchanged()
+
+
+def test_specialists_overlap_on_shared_wall_clock() -> None:
+    started: dict[str, float] = {}
+
+    def _slow(label: str):
+        def handler(_ctx, _args):
+            started[label] = time.monotonic()
+            time.sleep(0.2)
+            return {"ok": True, "score_is_probability": False}
+
+        return handler
+
+    crowding_planner = ScriptedPlanner(
+        [
+            AgentDecision(
+                action="call_tools",
+                hypothesis="localized crowded unwind",
+                reason="probe",
+                tool_calls=[ToolCall(id="1", name="get_cluster_exposure", args={})],
+            ),
+            AgentDecision(
+                action="finish",
+                hypothesis="localized crowded unwind",
+                reason="EVIDENCE_SUFFICIENT",
+                final_assessment="Crowding done.",
+            ),
+        ]
+    )
+    recovery_planner = ScriptedPlanner(
+        [
+            AgentDecision(
+                action="call_tools",
+                hypothesis="recovery-driven reversal",
+                reason="probe",
+                tool_calls=[ToolCall(id="1", name="get_factor_state", args={})],
+            ),
+            AgentDecision(
+                action="finish",
+                hypothesis="recovery-driven reversal",
+                reason="EVIDENCE_SUFFICIENT",
+                final_assessment="Recovery done.",
+            ),
+        ]
+    )
+    t0 = time.monotonic()
+    result = _run(
+        both_mechanisms_risk(),
+        crowding_planner=crowding_planner,
+        recovery_planner=recovery_planner,
+        crowding_tools=_registry({"get_cluster_exposure": _slow("crowding")}),
+        recovery_tools=_registry({"get_factor_state": _slow("recovery")}),
+        overall_deadline_seconds=5.0,
+    )
+    elapsed = time.monotonic() - t0
+    assert result.spawned == ("crowding", "recovery")
+    assert result.routing["schedule"] == "parallel_shared_deadline"
+    assert result.routing["deadline_seconds"] == 5.0
+    assert set(started) == {"crowding", "recovery"}
+    assert set(result.specialist_results) == {"crowding", "recovery"}
+    assert abs(started["crowding"] - started["recovery"]) < 0.15
+    assert elapsed < 0.36

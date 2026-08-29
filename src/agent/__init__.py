@@ -9,6 +9,7 @@ from src.agent.models import AgentDecision, AgentRunTrace, OrchestratorTrace, To
 from src.agent.orchestrator import (
     OrchestratedRunResult,
     run_orchestrated_investigation,
+    run_orchestrated_investigation_async,
     select_specialists,
 )
 from src.agent.state import AgentState
@@ -26,5 +27,6 @@ __all__ = [
     "ToolObservation",
     "run_agent",
     "run_orchestrated_investigation",
+    "run_orchestrated_investigation_async",
     "select_specialists",
 ]
