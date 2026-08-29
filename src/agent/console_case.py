@@ -5,7 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Mapping
 
+from src.agent.models import AgentDecision, ToolObservation
 from src.agent.orchestrator import OrchestratedRunResult
+from src.agent.report import _observed_from_tool
 from src.agent.specialists import BY_NAME
 from src.tools.registry import CROWDING_TOOL_NAMES, RECOVERY_TOOL_NAMES
 from src.utils.io import read_json
@@ -28,6 +30,7 @@ def build_console_case(
     horizon_days: int = 20,
     snapshot: Mapping[str, Any] | Path | None = None,
     elapsed_seconds: float = 0.0,
+    source: str = "export",
 ) -> dict[str, Any]:
     payload = _load_snapshot(snapshot)
     return {
@@ -36,6 +39,7 @@ def build_console_case(
         "date": result.as_of_date,
         "cutoff": _cutoff_label(result),
         "horizon_days": horizon_days,
+        "source": source,
         "risk_state": _risk_panel(result.risk_state, payload),
         "trace": _trace_panel(result, elapsed_seconds=elapsed_seconds),
         "note": _note_panel(result),
@@ -195,18 +199,8 @@ def _trace_panel(result: OrchestratedRunResult, *, elapsed_seconds: float) -> di
         run = result.specialist_results.get(name)
         decisions = []
         if run is not None:
-            for decision in run.state.decisions:
-                if decision.action != "call_tools":
-                    continue
-                decisions.append(
-                    {
-                        "hypothesis": decision.hypothesis,
-                        "tool_calls": [
-                            {"name": call.name, "args": dict(call.args or {})}
-                            for call in decision.tool_calls
-                        ],
-                    }
-                )
+            for decision, observations in _paired_steps(run.state.decisions, run.observations):
+                decisions.append(_decision_record(decision, observations))
         specialists.append(
             {
                 "name": spec.name,
@@ -230,8 +224,156 @@ def _trace_panel(result: OrchestratedRunResult, *, elapsed_seconds: float) -> di
         "elapsed_seconds": float(elapsed_seconds),
         "errors": list(result.trace.errors),
         "specialists": specialists,
+        "loop": _loop_events(result),
         "combined_stop": result.stop_reason,
     }
+
+
+def _paired_steps(
+    decisions: list[AgentDecision],
+    observations: tuple[ToolObservation, ...] | list[ToolObservation],
+) -> list[tuple[AgentDecision, list[ToolObservation]]]:
+    remaining = list(observations)
+    paired: list[tuple[AgentDecision, list[ToolObservation]]] = []
+    for decision in decisions:
+        batch: list[ToolObservation] = []
+        wanted = {call.id for call in decision.tool_calls if call.id}
+        if wanted:
+            keep: list[ToolObservation] = []
+            for item in remaining:
+                if item.tool_call_id in wanted:
+                    batch.append(item)
+                else:
+                    keep.append(item)
+            remaining = keep
+        elif decision.action == "call_tools":
+            take = min(len(decision.tool_calls), len(remaining))
+            batch = remaining[:take]
+            remaining = remaining[take:]
+        paired.append((decision, batch))
+    return paired
+
+
+def _decision_record(decision: AgentDecision, observations: list[ToolObservation]) -> dict[str, Any]:
+    return {
+        "action": decision.action,
+        "hypothesis": decision.hypothesis,
+        "reason": decision.reason,
+        "tool_calls": [
+            {"name": call.name, "args": dict(call.args or {})} for call in decision.tool_calls
+        ],
+        "observations": [_observation_record(item) for item in observations],
+    }
+
+
+def _observation_record(item: ToolObservation) -> dict[str, Any]:
+    lines = _observed_from_tool(item)
+    summary = "; ".join(lines) if lines else f"{item.name}: {item.status}"
+    if item.status != "ok" and item.error_message:
+        summary = f"{item.name}: {item.error_type or item.status} — {item.error_message}"
+    return {
+        "name": item.name,
+        "status": item.status,
+        "args": dict(item.args or {}),
+        "summary": summary,
+        "elapsed_ms": int(item.elapsed_ms or 0),
+        "discarded_post_cutoff": int(item.discarded_post_cutoff or 0),
+    }
+
+
+def _loop_events(result: OrchestratedRunResult) -> list[dict[str, Any]]:
+    quiet = bool((result.routing or {}).get("quiet"))
+    events: list[dict[str, Any]] = [
+        {
+            "id": "route",
+            "kind": "route",
+            "actor": "orchestrator",
+            "label": "ORCHESTRATOR",
+            "detail": (
+                "routing flags: none active"
+                if quiet
+                else "spawn " + ", ".join(result.spawned) + " on shared deadline"
+            ),
+            "spawned": list(result.spawned),
+            "quiet": quiet,
+            "reason": "NO_INVESTIGATION_NEEDED" if quiet else "deterministic_flags",
+        }
+    ]
+    for name in result.spawned:
+        spec = BY_NAME[name]
+        run = result.specialist_results.get(name)
+        if run is None:
+            events.append(
+                {
+                    "id": f"{name}-unresolvable",
+                    "kind": "stop",
+                    "actor": name,
+                    "label": spec.label,
+                    "detail": "specialist did not return",
+                    "reason": "UNRESOLVABLE",
+                    "step": 0,
+                }
+            )
+            continue
+        for index, (decision, observations) in enumerate(
+            _paired_steps(run.state.decisions, run.observations), start=1
+        ):
+            events.append(
+                {
+                    "id": f"{name}-plan-{index}",
+                    "kind": "plan",
+                    "actor": name,
+                    "label": spec.label,
+                    "detail": f"{decision.action}: {decision.hypothesis}",
+                    "action": decision.action,
+                    "hypothesis": decision.hypothesis,
+                    "reason": decision.reason,
+                    "step": index,
+                    "tool_calls": [
+                        {"name": call.name, "args": dict(call.args or {})}
+                        for call in decision.tool_calls
+                    ],
+                }
+            )
+            if decision.action == "call_tools":
+                records = [_observation_record(item) for item in observations]
+                events.append(
+                    {
+                        "id": f"{name}-observe-{index}",
+                        "kind": "observe",
+                        "actor": name,
+                        "label": spec.label,
+                        "detail": (
+                            f"{len(records)} tool result(s)"
+                            if records
+                            else "executor returned no observations"
+                        ),
+                        "step": index,
+                        "observations": records,
+                    }
+                )
+        events.append(
+            {
+                "id": f"{name}-stop",
+                "kind": "stop",
+                "actor": name,
+                "label": spec.label,
+                "detail": f"STOP: {run.stop_reason}",
+                "reason": run.stop_reason,
+                "step": run.state.step,
+            }
+        )
+    events.append(
+        {
+            "id": "combine",
+            "kind": "combine",
+            "actor": "orchestrator",
+            "label": "ORCHESTRATOR",
+            "detail": f"COMBINED STOP: {result.stop_reason}",
+            "reason": result.stop_reason,
+        }
+    )
+    return events
 
 
 def _note_panel(result: OrchestratedRunResult) -> dict[str, Any]:

@@ -12,6 +12,7 @@ def test_console_case_uses_agent_buckets() -> None:
     assert case["trace"]["quiet"] is True
     assert case["trace"]["spawned"] == []
     assert case["trace"]["combined_stop"] == "NO_INVESTIGATION_NEEDED"
+    assert [event["kind"] for event in case["trace"]["loop"]] == ["route", "combine"]
     assert case["risk_state"]["trigger_count"] == "0 / 4"
     assert case["note"]["score_is_probability"] is False
     assert "Citations" not in case["note"]["citations"]
@@ -31,6 +32,16 @@ def test_console_case_crowding_has_trace_and_citations_shape() -> None:
     assert isinstance(case["note"]["citations"], list)
     assert case["risk_state"]["trigger_count"].endswith(f"/ {len(PM_SIGNALS)}")
     assert [row["metric"] for row in case["risk_state"]["scorecard"]] == list(PM_SIGNALS)
+    kinds = [event["kind"] for event in case["trace"]["loop"]]
+    assert kinds[0] == "route"
+    assert "plan" in kinds
+    assert "observe" in kinds
+    assert kinds[-1] == "combine"
+    observe = next(event for event in case["trace"]["loop"] if event["kind"] == "observe")
+    assert observe["observations"]
+    assert observe["observations"][0]["summary"]
+    finish = [item for item in case["trace"]["specialists"][0]["decisions"] if item["action"] == "finish"]
+    assert finish
 
 
 def test_console_case_scorecard_matches_agent_four_signals() -> None:

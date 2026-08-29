@@ -52,7 +52,15 @@ OUTPUTS = (
 )
 
 
-def _run(spec: dict) -> dict:
+def run_case(case_id: str, *, source: str = "export") -> dict:
+    spec = next((item for item in SPECS if item["id"] == case_id), None)
+    if spec is None:
+        known = ", ".join(item["id"] for item in SPECS)
+        raise KeyError(f"unknown case {case_id!r}; expected one of: {known}")
+    return _run(spec, source=source)
+
+
+def _run(spec: dict, *, source: str = "export") -> dict:
     fallback = spec["fallback"]()
     risk = compact_from_snapshot(spec["snapshot"], fallback) if spec["snapshot"] else dict(fallback)
     risk.update(spec["overlay"])
@@ -70,6 +78,7 @@ def _run(spec: dict) -> dict:
         horizon_days=spec["horizon_days"],
         snapshot=spec["snapshot"],
         elapsed_seconds=round(elapsed, 2),
+        source=source,
     )
 
 

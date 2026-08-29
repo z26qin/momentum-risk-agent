@@ -28,3 +28,19 @@ export async function loadCases(): Promise<CaseData[]> {
     return ALL_CASES;
   }
 }
+
+export async function rerunCase(caseId: string): Promise<CaseData> {
+  const response = await fetch(`/api/run/${encodeURIComponent(caseId)}`, {
+    method: "POST",
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(body || `re-run failed (${response.status})`);
+  }
+  const payload: unknown = await response.json();
+  if (!payload || typeof payload !== "object" || !("id" in payload)) {
+    throw new Error("re-run returned an unexpected payload");
+  }
+  return payload as CaseData;
+}

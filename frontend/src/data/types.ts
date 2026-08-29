@@ -6,10 +6,10 @@
  *
  * Data flow:
  *   run_orchestrated_investigation()
- *     → scripts/export_frontend_cases.py
- *       → frontend/public/cases.json
- *         → CaseData (this file)
- *           → three columns: RiskState | InvestigationTrace | PMNote
+ *     → scripts/export_frontend_cases.py  (frozen replay)
+ *     → POST /api/run/:id                 (live re-run)
+ *       → CaseData
+ *         → RiskState (immutable input) | loop playback | PM note
  */
 
 // ── RiskState (immutable, code-owned) ──────────────────────────────
@@ -68,9 +68,39 @@ export interface ToolCallRecord {
   args: Record<string, unknown>;
 }
 
+export interface ObservationRecord {
+  name: string;
+  status: string;
+  args: Record<string, unknown>;
+  summary: string;
+  elapsed_ms: number;
+  discarded_post_cutoff: number;
+}
+
 export interface DecisionRecord {
+  action?: "call_tools" | "finish" | "escalate";
   hypothesis: string;
+  reason?: string;
   tool_calls: ToolCallRecord[];
+  observations?: ObservationRecord[];
+}
+
+export type LoopKind = "route" | "plan" | "observe" | "stop" | "combine";
+
+export interface LoopEvent {
+  id: string;
+  kind: LoopKind;
+  actor: string;
+  label: string;
+  detail: string;
+  reason?: string;
+  action?: string;
+  hypothesis?: string;
+  step?: number;
+  quiet?: boolean;
+  spawned?: string[];
+  tool_calls?: ToolCallRecord[];
+  observations?: ObservationRecord[];
 }
 
 export interface SpecialistTrace {
@@ -95,6 +125,7 @@ export interface InvestigationTrace {
   elapsed_seconds: number;
   errors: string[];
   specialists: SpecialistTrace[];
+  loop?: LoopEvent[];
   combined_stop: StopReason;
 }
 
@@ -120,6 +151,7 @@ export interface CaseData {
   date: string;
   cutoff: string;
   horizon_days: number;
+  source?: "export" | "live";
   risk_state: RiskState;
   trace: InvestigationTrace;
   note: PMNote;

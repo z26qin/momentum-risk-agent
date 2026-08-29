@@ -1,3 +1,4 @@
+import type { NotePhase } from "../data/playback";
 import type { PMNote as PMNoteData } from "../data/types";
 
 /**
@@ -25,14 +26,28 @@ function parseCitation(raw: string): { id: string; text: string } {
   return { id: "", text: raw };
 }
 
-export function PMNotePanel({ data }: { data: PMNoteData }) {
+export function PMNotePanel({
+  data,
+  phase,
+  liveObserved,
+}: {
+  data: PMNoteData;
+  phase: NotePhase;
+  liveObserved: string[];
+}) {
+  const pending = phase === "pending";
+  const complete = phase === "complete";
+  const observed = complete ? data.observed : liveObserved;
+
   return (
     <div className="w-full lg:w-[420px] shrink-0 lg:border-l border-line bg-panel p-5 pb-7 flex flex-col gap-4 box-border">
       <div className="flex items-baseline justify-between">
         <h2 className="font-grot text-[11px] font-semibold tracking-[0.16em] uppercase text-ink m-0">
           PM note
         </h2>
-        <span className="font-mono text-[10px] text-muted">code synthesis</span>
+        <span className="font-mono text-[10px] text-muted">
+          {complete ? "code synthesis" : pending ? "waiting for loop" : "filling from tool results"}
+        </span>
       </div>
 
       {/* Current read */}
@@ -41,7 +56,11 @@ export function PMNotePanel({ data }: { data: PMNoteData }) {
           Current read
         </span>
         <p className="font-serif text-[17px] leading-relaxed text-ink m-0">
-          {data.current_read}
+          {complete
+            ? data.current_read
+            : pending
+              ? "RiskState is the only input so far. The orchestrator has not routed yet."
+              : "Specialists are still in the planner → executor loop. The note is not synthesized until COMBINED STOP."}
         </p>
       </div>
 
@@ -51,7 +70,12 @@ export function PMNotePanel({ data }: { data: PMNoteData }) {
           Observed
         </span>
         <div className="flex flex-col gap-1.5">
-          {data.observed.map((item, i) => (
+          {observed.length === 0 && (
+            <span className="font-mono text-[10px] text-muted">
+              No tool observations yet.
+            </span>
+          )}
+          {observed.map((item, i) => (
             <div key={i} className="flex gap-2.5 items-start">
               <Bullet fill="solid" />
               <span className="font-serif text-sm leading-relaxed text-ink">
@@ -68,7 +92,12 @@ export function PMNotePanel({ data }: { data: PMNoteData }) {
           Inferred
         </span>
         <div className="border border-line p-2.5 flex flex-col gap-1.5">
-          {data.inferred.map((item, i) => (
+          {!complete && (
+            <span className="font-mono text-[10px] text-muted">
+              Inferred buckets wait for stop.
+            </span>
+          )}
+          {complete && data.inferred.map((item, i) => (
             <div key={i} className="flex gap-2.5 items-start">
               <Bullet fill="outlined" />
               <span className="font-serif text-sm leading-relaxed text-ink">
@@ -85,7 +114,12 @@ export function PMNotePanel({ data }: { data: PMNoteData }) {
           Against
         </span>
         <div className="bg-ink p-2.5 flex flex-col gap-1.5">
-          {data.against.map((item, i) => (
+          {!complete && (
+            <span className="font-mono text-[10px] text-bg/70">
+              Against waits for calibrated synthesis.
+            </span>
+          )}
+          {complete && data.against.map((item, i) => (
             <div key={i} className="flex gap-2.5 items-start">
               <Bullet fill="inverted" />
               <span className="font-serif text-sm leading-relaxed text-bg">
@@ -102,7 +136,12 @@ export function PMNotePanel({ data }: { data: PMNoteData }) {
           Not confirmed
         </span>
         <div className="border border-dashed border-line p-2.5 flex flex-col gap-1.5">
-          {data.not_confirmed.map((item, i) => (
+          {!complete && (
+            <span className="font-mono text-[10px] text-muted">
+              Not confirmed waits for calibrated synthesis.
+            </span>
+          )}
+          {complete && data.not_confirmed.map((item, i) => (
             <div key={i} className="flex gap-2.5 items-start">
               <Bullet fill="dashed" />
               <span className="font-serif text-sm leading-relaxed text-muted">
@@ -113,7 +152,7 @@ export function PMNotePanel({ data }: { data: PMNoteData }) {
         </div>
       </div>
 
-      {data.what_changed && (
+      {complete && data.what_changed && (
         <div className="flex flex-col gap-2">
           <span className="font-grot text-[10px] tracking-[0.14em] uppercase text-muted">
             What changed
@@ -124,7 +163,7 @@ export function PMNotePanel({ data }: { data: PMNoteData }) {
         </div>
       )}
 
-      {data.next_useful_check && (
+      {complete && data.next_useful_check && (
         <div className="flex flex-col gap-2">
           <span className="font-grot text-[10px] tracking-[0.14em] uppercase text-muted">
             Next useful check
@@ -141,10 +180,15 @@ export function PMNotePanel({ data }: { data: PMNoteData }) {
           Citations
         </span>
         <div className="flex flex-col gap-1">
-          {data.citations.length === 0 && (
+          {!complete && (
+            <span className="font-mono text-[10px] text-muted">
+              Citations attach after tool observations are classified.
+            </span>
+          )}
+          {complete && data.citations.length === 0 && (
             <span className="font-mono text-[10px] text-muted">None</span>
           )}
-          {data.citations.map((raw, i) => {
+          {complete && data.citations.map((raw, i) => {
             const { id, text } = parseCitation(raw);
             return (
               <div key={i} className="flex gap-2 items-baseline">

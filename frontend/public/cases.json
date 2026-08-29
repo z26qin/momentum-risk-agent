@@ -5,6 +5,7 @@
     "date": "2026-05-29",
     "cutoff": "2026-05-29 16:00:00-04",
     "horizon_days": 20,
+    "source": "export",
     "risk_state": {
       "scorecard": [
         {
@@ -58,14 +59,14 @@
       "score_is_probability": false
     },
     "trace": {
-      "run_id": "79e1dc68b931",
+      "run_id": "f819aecf4024",
       "quiet": false,
       "spawned": [
         "crowding"
       ],
       "schedule": "parallel_shared_deadline",
       "deadline_seconds": 10.0,
-      "elapsed_seconds": 0.15,
+      "elapsed_seconds": 0.17,
       "errors": [],
       "specialists": [
         {
@@ -83,7 +84,9 @@
           "planner_kind": "heuristic-kl_crowding",
           "decisions": [
             {
+              "action": "call_tools",
               "hypothesis": "localized crowded unwind",
+              "reason": "cluster concentration may explain the pressure",
               "tool_calls": [
                 {
                   "name": "get_cluster_exposure",
@@ -101,10 +104,42 @@
                     "query": "crowded hedge-fund positioning unwind deleveraging"
                   }
                 }
+              ],
+              "observations": [
+                {
+                  "name": "get_cluster_exposure",
+                  "status": "ok",
+                  "args": {},
+                  "summary": "cluster exposure: CIEN, COHR, LITE",
+                  "elapsed_ms": 1,
+                  "discarded_post_cutoff": 0
+                },
+                {
+                  "name": "search_positioning",
+                  "status": "ok",
+                  "args": {
+                    "query": "crowded hedge-fund positioning unwind deleveraging"
+                  },
+                  "summary": "search_positioning: [CSU-2026-007] 2026-05-05 Arista Networks Reports First Quarter 2026 Financial Results",
+                  "elapsed_ms": 69,
+                  "discarded_post_cutoff": 0
+                },
+                {
+                  "name": "search_news",
+                  "status": "ok",
+                  "args": {
+                    "query": "crowded hedge-fund positioning unwind deleveraging"
+                  },
+                  "summary": "search_news: [CSU-2026-007] 2026-05-05 Arista Networks Reports First Quarter 2026 Financial Results",
+                  "elapsed_ms": 63,
+                  "discarded_post_cutoff": 0
+                }
               ]
             },
             {
+              "action": "call_tools",
               "hypothesis": "forced deleveraging still unconfirmed",
+              "reason": "drill into the concentrated long before stopping",
               "tool_calls": [
                 {
                   "name": "inspect_name",
@@ -112,12 +147,180 @@
                     "symbol": "CIEN"
                   }
                 }
+              ],
+              "observations": [
+                {
+                  "name": "inspect_name",
+                  "status": "ok",
+                  "args": {
+                    "symbol": "CIEN"
+                  },
+                  "summary": "CIEN in_cluster=True in_book=True leg=long",
+                  "elapsed_ms": 28,
+                  "discarded_post_cutoff": 0
+                }
               ]
+            },
+            {
+              "action": "finish",
+              "hypothesis": "forced deleveraging still unconfirmed",
+              "reason": "EVIDENCE_SUFFICIENT",
+              "tool_calls": [],
+              "observations": []
             }
           ],
           "stop_reason": "EVIDENCE_SUFFICIENT",
           "errors": [],
-          "elapsed_seconds": 0.15
+          "elapsed_seconds": 0.17
+        }
+      ],
+      "loop": [
+        {
+          "id": "route",
+          "kind": "route",
+          "actor": "orchestrator",
+          "label": "ORCHESTRATOR",
+          "detail": "spawn crowding on shared deadline",
+          "spawned": [
+            "crowding"
+          ],
+          "quiet": false,
+          "reason": "deterministic_flags"
+        },
+        {
+          "id": "crowding-plan-1",
+          "kind": "plan",
+          "actor": "crowding",
+          "label": "Crowding (Khandani–Lo)",
+          "detail": "call_tools: localized crowded unwind",
+          "action": "call_tools",
+          "hypothesis": "localized crowded unwind",
+          "reason": "cluster concentration may explain the pressure",
+          "step": 1,
+          "tool_calls": [
+            {
+              "name": "get_cluster_exposure",
+              "args": {}
+            },
+            {
+              "name": "search_positioning",
+              "args": {
+                "query": "crowded hedge-fund positioning unwind deleveraging"
+              }
+            },
+            {
+              "name": "search_news",
+              "args": {
+                "query": "crowded hedge-fund positioning unwind deleveraging"
+              }
+            }
+          ]
+        },
+        {
+          "id": "crowding-observe-1",
+          "kind": "observe",
+          "actor": "crowding",
+          "label": "Crowding (Khandani–Lo)",
+          "detail": "3 tool result(s)",
+          "step": 1,
+          "observations": [
+            {
+              "name": "get_cluster_exposure",
+              "status": "ok",
+              "args": {},
+              "summary": "cluster exposure: CIEN, COHR, LITE",
+              "elapsed_ms": 1,
+              "discarded_post_cutoff": 0
+            },
+            {
+              "name": "search_positioning",
+              "status": "ok",
+              "args": {
+                "query": "crowded hedge-fund positioning unwind deleveraging"
+              },
+              "summary": "search_positioning: [CSU-2026-007] 2026-05-05 Arista Networks Reports First Quarter 2026 Financial Results",
+              "elapsed_ms": 69,
+              "discarded_post_cutoff": 0
+            },
+            {
+              "name": "search_news",
+              "status": "ok",
+              "args": {
+                "query": "crowded hedge-fund positioning unwind deleveraging"
+              },
+              "summary": "search_news: [CSU-2026-007] 2026-05-05 Arista Networks Reports First Quarter 2026 Financial Results",
+              "elapsed_ms": 63,
+              "discarded_post_cutoff": 0
+            }
+          ]
+        },
+        {
+          "id": "crowding-plan-2",
+          "kind": "plan",
+          "actor": "crowding",
+          "label": "Crowding (Khandani–Lo)",
+          "detail": "call_tools: forced deleveraging still unconfirmed",
+          "action": "call_tools",
+          "hypothesis": "forced deleveraging still unconfirmed",
+          "reason": "drill into the concentrated long before stopping",
+          "step": 2,
+          "tool_calls": [
+            {
+              "name": "inspect_name",
+              "args": {
+                "symbol": "CIEN"
+              }
+            }
+          ]
+        },
+        {
+          "id": "crowding-observe-2",
+          "kind": "observe",
+          "actor": "crowding",
+          "label": "Crowding (Khandani–Lo)",
+          "detail": "1 tool result(s)",
+          "step": 2,
+          "observations": [
+            {
+              "name": "inspect_name",
+              "status": "ok",
+              "args": {
+                "symbol": "CIEN"
+              },
+              "summary": "CIEN in_cluster=True in_book=True leg=long",
+              "elapsed_ms": 28,
+              "discarded_post_cutoff": 0
+            }
+          ]
+        },
+        {
+          "id": "crowding-plan-3",
+          "kind": "plan",
+          "actor": "crowding",
+          "label": "Crowding (Khandani–Lo)",
+          "detail": "finish: forced deleveraging still unconfirmed",
+          "action": "finish",
+          "hypothesis": "forced deleveraging still unconfirmed",
+          "reason": "EVIDENCE_SUFFICIENT",
+          "step": 3,
+          "tool_calls": []
+        },
+        {
+          "id": "crowding-stop",
+          "kind": "stop",
+          "actor": "crowding",
+          "label": "Crowding (Khandani–Lo)",
+          "detail": "STOP: EVIDENCE_SUFFICIENT",
+          "reason": "EVIDENCE_SUFFICIENT",
+          "step": 3
+        },
+        {
+          "id": "combine",
+          "kind": "combine",
+          "actor": "orchestrator",
+          "label": "ORCHESTRATOR",
+          "detail": "COMBINED STOP: EVIDENCE_SUFFICIENT",
+          "reason": "EVIDENCE_SUFFICIENT"
         }
       ],
       "combined_stop": "EVIDENCE_SUFFICIENT"
@@ -165,6 +368,7 @@
     "date": "2020-03-24",
     "cutoff": "2020-03-24 16:00:00-04",
     "horizon_days": 20,
+    "source": "export",
     "risk_state": {
       "scorecard": [
         {
@@ -208,7 +412,7 @@
       "score_is_probability": false
     },
     "trace": {
-      "run_id": "77717646d526",
+      "run_id": "19dbb4991a9c",
       "quiet": false,
       "spawned": [
         "recovery"
@@ -232,7 +436,9 @@
           "planner_kind": "heuristic-dm_recovery",
           "decisions": [
             {
+              "action": "call_tools",
               "hypothesis": "recovery-driven reversal",
+              "reason": "DM recovery flags are present in the deterministic state",
               "tool_calls": [
                 {
                   "name": "get_factor_state",
@@ -244,21 +450,193 @@
                     "query": "market recovery loser rebound short-leg pain volatility"
                   }
                 }
+              ],
+              "observations": [
+                {
+                  "name": "get_factor_state",
+                  "status": "ok",
+                  "args": {},
+                  "summary": "factor/regime: panic_elevated; score_is_probability=False",
+                  "elapsed_ms": 0,
+                  "discarded_post_cutoff": 0
+                },
+                {
+                  "name": "search_news",
+                  "status": "ok",
+                  "args": {
+                    "query": "market recovery loser rebound short-leg pain volatility"
+                  },
+                  "summary": "search_news: [M20-2020-001] 2020-03-15 Federal Reserve Actions to Support the Flow of Credit to Households and Businesses",
+                  "elapsed_ms": 11,
+                  "discarded_post_cutoff": 0
+                }
               ]
             },
             {
+              "action": "call_tools",
               "hypothesis": "recovery-driven reversal",
+              "reason": "compare the current recovery snapshot with the loaded prior state",
               "tool_calls": [
                 {
                   "name": "compare_prior_state",
                   "args": {}
                 }
+              ],
+              "observations": [
+                {
+                  "name": "compare_prior_state",
+                  "status": "ok",
+                  "args": {
+                    "prior_date": null
+                  },
+                  "summary": "compare_prior_state: ok",
+                  "elapsed_ms": 0,
+                  "discarded_post_cutoff": 0
+                }
               ]
+            },
+            {
+              "action": "finish",
+              "hypothesis": "recovery-driven reversal",
+              "reason": "EVIDENCE_SUFFICIENT",
+              "tool_calls": [],
+              "observations": []
             }
           ],
           "stop_reason": "EVIDENCE_SUFFICIENT",
           "errors": [],
           "elapsed_seconds": 0.01
+        }
+      ],
+      "loop": [
+        {
+          "id": "route",
+          "kind": "route",
+          "actor": "orchestrator",
+          "label": "ORCHESTRATOR",
+          "detail": "spawn recovery on shared deadline",
+          "spawned": [
+            "recovery"
+          ],
+          "quiet": false,
+          "reason": "deterministic_flags"
+        },
+        {
+          "id": "recovery-plan-1",
+          "kind": "plan",
+          "actor": "recovery",
+          "label": "Recovery (Daniel–Moskowitz)",
+          "detail": "call_tools: recovery-driven reversal",
+          "action": "call_tools",
+          "hypothesis": "recovery-driven reversal",
+          "reason": "DM recovery flags are present in the deterministic state",
+          "step": 1,
+          "tool_calls": [
+            {
+              "name": "get_factor_state",
+              "args": {}
+            },
+            {
+              "name": "search_news",
+              "args": {
+                "query": "market recovery loser rebound short-leg pain volatility"
+              }
+            }
+          ]
+        },
+        {
+          "id": "recovery-observe-1",
+          "kind": "observe",
+          "actor": "recovery",
+          "label": "Recovery (Daniel–Moskowitz)",
+          "detail": "2 tool result(s)",
+          "step": 1,
+          "observations": [
+            {
+              "name": "get_factor_state",
+              "status": "ok",
+              "args": {},
+              "summary": "factor/regime: panic_elevated; score_is_probability=False",
+              "elapsed_ms": 0,
+              "discarded_post_cutoff": 0
+            },
+            {
+              "name": "search_news",
+              "status": "ok",
+              "args": {
+                "query": "market recovery loser rebound short-leg pain volatility"
+              },
+              "summary": "search_news: [M20-2020-001] 2020-03-15 Federal Reserve Actions to Support the Flow of Credit to Households and Businesses",
+              "elapsed_ms": 11,
+              "discarded_post_cutoff": 0
+            }
+          ]
+        },
+        {
+          "id": "recovery-plan-2",
+          "kind": "plan",
+          "actor": "recovery",
+          "label": "Recovery (Daniel–Moskowitz)",
+          "detail": "call_tools: recovery-driven reversal",
+          "action": "call_tools",
+          "hypothesis": "recovery-driven reversal",
+          "reason": "compare the current recovery snapshot with the loaded prior state",
+          "step": 2,
+          "tool_calls": [
+            {
+              "name": "compare_prior_state",
+              "args": {}
+            }
+          ]
+        },
+        {
+          "id": "recovery-observe-2",
+          "kind": "observe",
+          "actor": "recovery",
+          "label": "Recovery (Daniel–Moskowitz)",
+          "detail": "1 tool result(s)",
+          "step": 2,
+          "observations": [
+            {
+              "name": "compare_prior_state",
+              "status": "ok",
+              "args": {
+                "prior_date": null
+              },
+              "summary": "compare_prior_state: ok",
+              "elapsed_ms": 0,
+              "discarded_post_cutoff": 0
+            }
+          ]
+        },
+        {
+          "id": "recovery-plan-3",
+          "kind": "plan",
+          "actor": "recovery",
+          "label": "Recovery (Daniel–Moskowitz)",
+          "detail": "finish: recovery-driven reversal",
+          "action": "finish",
+          "hypothesis": "recovery-driven reversal",
+          "reason": "EVIDENCE_SUFFICIENT",
+          "step": 3,
+          "tool_calls": []
+        },
+        {
+          "id": "recovery-stop",
+          "kind": "stop",
+          "actor": "recovery",
+          "label": "Recovery (Daniel–Moskowitz)",
+          "detail": "STOP: EVIDENCE_SUFFICIENT",
+          "reason": "EVIDENCE_SUFFICIENT",
+          "step": 3
+        },
+        {
+          "id": "combine",
+          "kind": "combine",
+          "actor": "orchestrator",
+          "label": "ORCHESTRATOR",
+          "detail": "COMBINED STOP: EVIDENCE_SUFFICIENT",
+          "reason": "EVIDENCE_SUFFICIENT"
         }
       ],
       "combined_stop": "EVIDENCE_SUFFICIENT"
@@ -298,6 +676,7 @@
     "date": "2024-01-05",
     "cutoff": "2024-01-05 16:00:00-05",
     "horizon_days": 20,
+    "source": "export",
     "risk_state": {
       "scorecard": [
         {
@@ -341,7 +720,7 @@
       "score_is_probability": false
     },
     "trace": {
-      "run_id": "eb3fc00c6ddf",
+      "run_id": "bb9b8397ef22",
       "quiet": true,
       "spawned": [],
       "schedule": "parallel_shared_deadline",
@@ -349,6 +728,26 @@
       "elapsed_seconds": 0.0,
       "errors": [],
       "specialists": [],
+      "loop": [
+        {
+          "id": "route",
+          "kind": "route",
+          "actor": "orchestrator",
+          "label": "ORCHESTRATOR",
+          "detail": "routing flags: none active",
+          "spawned": [],
+          "quiet": true,
+          "reason": "NO_INVESTIGATION_NEEDED"
+        },
+        {
+          "id": "combine",
+          "kind": "combine",
+          "actor": "orchestrator",
+          "label": "ORCHESTRATOR",
+          "detail": "COMBINED STOP: NO_INVESTIGATION_NEEDED",
+          "reason": "NO_INVESTIGATION_NEEDED"
+        }
+      ],
       "combined_stop": "NO_INVESTIGATION_NEEDED"
     },
     "note": {
