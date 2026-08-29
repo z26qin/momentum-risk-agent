@@ -112,15 +112,16 @@ def _recovery_mocks() -> ToolRegistry:
 
 
 def _run(risk, **kwargs):
-    return run_orchestrated_investigation(
-        as_of_date=risk["as_of_date"],
-        risk_state=risk,
-        crowding_tools=_crowding_mocks(),
-        recovery_tools=_recovery_mocks(),
-        use_llm=False,
-        verbose=False,
-        **kwargs,
-    )
+    options = {
+        "as_of_date": risk["as_of_date"],
+        "risk_state": risk,
+        "crowding_tools": _crowding_mocks(),
+        "recovery_tools": _recovery_mocks(),
+        "use_llm": False,
+        "verbose": False,
+    }
+    options.update(kwargs)
+    return run_orchestrated_investigation(**options)
 
 
 def _ok_names(result) -> list[str]:
