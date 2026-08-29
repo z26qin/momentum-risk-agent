@@ -22,6 +22,7 @@ outputs/narrative_shift_poc/
 runtime_state/
 outputs/latest_assessment.json
 outputs/latest_comparison.json
+outputs/agent_traces/
 
 # Alternative-data raw caches.
 # Cached locally so later sessions make zero network calls; too large for git.

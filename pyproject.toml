@@ -3,14 +3,15 @@ requires = ["setuptools==80.9.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "momentum-crash"
-version = "0.1.0"
-description = "Point-in-time monitoring research for US equity momentum tail risk"
+name = "momentum-risk-agent"
+version = "0.2.0"
+description = "Investigation agent over a deterministic US equity momentum tail-risk monitor"
 requires-python = ">=3.11,<3.15"
 dependencies = [
   "numpy==2.4.4",
   "pandas==3.0.2",
   "pyarrow==25.0.0",
+  "pydantic==2.11.7",
   "scikit-learn==1.8.0",
 ]
 

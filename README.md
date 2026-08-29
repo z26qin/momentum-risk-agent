@@ -1,177 +1,223 @@
 <p align="center">
   <a href="docs/methodology.md"><img src="https://img.shields.io/badge/Docs-methodology-FFD700?style=for-the-badge" alt="Documentation"></a>
-  <a href="docs/demo_walkthrough.md"><img src="https://img.shields.io/badge/Demo-15--20%20min-0A7A3E?style=for-the-badge" alt="Demo walkthrough"></a>
-  <a href="notebooks/final_mvp_demo.ipynb"><img src="https://img.shields.io/badge/Notebook-final__mvp__demo-1f6feb?style=for-the-badge" alt="Demo notebook"></a>
-  <a href="#what-it-will-not-do"><img src="https://img.shields.io/badge/Status-Research%20MVP-orange?style=for-the-badge" alt="Research MVP"></a>
+  <a href="#what-it-will-not-do"><img src="https://img.shields.io/badge/Status-Investigation%20agent%20MVP-orange?style=for-the-badge" alt="Investigation agent MVP"></a>
 </p>
 
-# Momentum Tail-Risk Monitor
+# Momentum-Risk-Agent
 
-A morning risk note for a momentum book.
+An investigation agent over a **deterministic** US equity momentum tail-risk monitor.
 
-It helps a PM see **where the pressure is**, **which story is actually supported**, **what is still missing**, and **what to check next** — before acting.
+It answers:
 
-It does **not** tell you when a crash will happen, give a crash probability, or tell you to trade.
+> Given the current deterministic momentum risk state, what should I investigate next, which tools should I use, what evidence supports or contradicts each hypothesis, and when should I stop?
 
-### Start here
+It does **not** trade, de-gross, or publish a crash probability.
 
-1. [`outputs/current_semi_unwind/pm_case_read.md`](outputs/current_semi_unwind/pm_case_read.md) — the 2026-05-29 note  
-2. [`notebooks/final_mvp_demo.ipynb`](notebooks/final_mvp_demo.ipynb) — click through the same case  
-3. WhatsApp — the same short note on a phone  
-4. Engineers: [`src/agent.py`](src/agent.py) · [`docs/hermes_whatsapp_poc.md`](docs/hermes_whatsapp_poc.md) · [`docs/methodology.md`](docs/methodology.md)
+This repository is a **new project** cloned from [`momentum-tail-risk-monitor`](https://github.com/z26qin/momentum-tail-risk-monitor). The quantitative engine, evidence cutoff, fail-closed behavior, and PM-facing calibration are preserved. The architectural upgrade is the investigation loop:
+
+> **Model plans. Executor enforces invariants.**
+
+---
+
+## Original system
+
+```text
+deterministic monitor
+        ↓
+mostly fixed investigation workflow
+        ↓
+PM note
+```
+
+The original loop in `src/agent/heuristic.py` still exists (compatibility tests and notebook path). It chooses among a small, pre-programmed set of mechanism searches.
+
+## New system
+
+```text
+deterministic monitor
+        ↓
+immutable RiskState
+        ↓
+AgentState
+        ↓
+LLM planner  →  structured AgentDecision
+        ↓
+deterministic executor  (allowlist, args, timeout, dedup, cutoff)
+        ↓
+validated tool observations
+        ↓
+AgentState update
+        ↓
+LLM planner
+        ↓
+...
+        ↓
+FINISH / ESCALATE  →  calibrated PM note + audit trace
+```
+
+The quantitative engine remains the source of truth. The agent investigates the state; it does not change it.
 
 ---
 
 ## What a PM sees
 
-A short morning note. Not a model dump, and not a trade.
-
-The demo book is an equal-weight S&P 500 **12-1 long-10 / short-10** (a transparent proxy, not a live institutional portfolio). Frozen 2026-05-29 case — not a live call:
+Frozen 2026-05-29 case — not a live call:
 
 ```text
-Not a confirmed crowded unwind.
+Current read
+Pressure is localized; available evidence does not establish a
+book-wide unwind or recovery crash.
 
-Observed: pressure in CIEN–COHR–LITE, not the whole book.
-Inferred: localized crowding, not a market-wide unwind.
-Against: liquidity is still absorbing; shorts are not being squeezed.
-Not confirmed: forced selling / financing stress.
-Next: watch whether selling spreads outside the cluster.
+Observed:
+- 1 / 4 deterministic signals triggered
+- theme cluster: CIEN, COHR, LITE
+- cluster exposure: CIEN, COHR, LITE
+
+Inferred:
+- Working hypothesis: localized crowded unwind
+
+Against:
+- Liquidity is still absorbing; shorts are not being squeezed.
+
+Not confirmed:
+- Broad forced deleveraging / financing stress
+
+Investigation path:
+1. localized crowded unwind · tools=['get_cluster_exposure', 'search_positioning', 'search_news']
+2. forced deleveraging still unconfirmed · tools=['inspect_name']
+3. STOP: EVIDENCE_SUFFICIENT
+
+What changed:
+- Deterministic snapshot already compared with 2026-04-30; this investigation did not recompute that delta.
+
+Next useful check:
+- Watch whether selling spreads outside the cluster.
 ```
 
-| PM question | Current read |
-|---|---|
-| Where is the risk? | A concentrated long-side cluster (`CIEN`–`COHR`–`LITE`) |
-| Recovery crash? | Not confirmed |
-| Crowded unwind? | Partially supported — local, not broad |
-| What is missing? | Forced selling, liquidity failure, selling outside the cluster |
-| What next? | Watch breadth, selling outside the cluster, and whether liquidity still holds |
-
-Full write-up: [`outputs/current_semi_unwind/pm_case_read.md`](outputs/current_semi_unwind/pm_case_read.md). Offline mockup: [`docs/figures/dashboard_mockup.html`](docs/figures/dashboard_mockup.html).
-
-<p align="center">
-  <img src="docs/figures/dashboard_mockup_preview.png" alt="Momentum tail-risk monitor — PM workflow prototype" width="920">
-</p>
-
-Same rules on two other dates: [March 2020](outputs/march_2020_reference/pm_case_read.md) looks like a recovery-crash setup; [January 2024](outputs/quiet_control_2024/pm_case_read.md) does not escalate. Cross-case table: [`outputs/cross_case_comparison.md`](outputs/cross_case_comparison.md).
+Same rules on two other dates: [March 2020](outputs/march_2020_reference/pm_case_read.md) is a recovery-crash reference; [January 2024](outputs/quiet_control_2024/pm_case_read.md) should not escalate. Cross-case table: [`outputs/cross_case_comparison.md`](outputs/cross_case_comparison.md).
 
 ---
 
-## How it works
-
-```text
-1. Measure the book
-   Where losses sit, and how concentrated they are.
-   These numbers are the source of truth. AI cannot rewrite them.
-
-2. Investigate the story
-   Look up what was already public that day. Does it support the
-   crowding story, the recovery story, or neither? If the first
-   pass is thin, ask one more specific question, then stop.
-
-3. Write the note
-   Where is the pressure, what is supported, what is still missing,
-   what to check next. Notebook or WhatsApp — same read.
-```
-
-> **Numbers first. Investigation second. The note cannot place a trade.**
-
-Only information that was already public by that day's close is used. If something is not in the record, the note says so. It does not invent it.
-
----
-
-## What it will not do
-
-- Call crash timing or publish a crash probability  
-- Issue a trade, hedge, or de-gross instruction  
-- Treat “hedge funds cut tech” as proof of forced deleveraging  
-- Treat public short-interest / news volume as ownership or leverage  
-- Pretend the demo 10/10 book is your live book  
-
-Fuller list: [`docs/limitations.md`](docs/limitations.md).
-
----
-
-## Agent loop
-
-For a reviewer. A PM can skip this.
-
-The agent sits on top of the numbers. It never changes them.
-
-```text
-Read the current book state
-        ↓
-Choose what to look up next
-  (crowding, recovery, or fundamentals)
-        ↓
-Read dated public evidence
-        ↓
-If the first pass is thin, ask one narrower question
-        ↓
-Stop and write the note
-```
-
-Code: `run_investigation_loop` in [`src/agent.py`](src/agent.py).
-
-```python
-from src.agent import run_investigation_agent
-
-result = run_investigation_agent(as_of_date="2026-05-29", max_steps=4, verbose=True)
-print(result.report)
-```
-
-On the 2026-05-29 case: it looked up crowding evidence, found a tech-exposure cut that did not prove a broad unwind, asked one follow-up, and stopped.
-
----
-
-## WhatsApp (Hermes)
-
-The same note, on a phone. Hermes does not recompute the book. Setup: [`docs/hermes_whatsapp_poc.md`](docs/hermes_whatsapp_poc.md).
-
-- A 0–100 monitoring band may appear in the note. It is **not** a crash probability.  
-- Claims are labeled **observed / inferred / not confirmed**.  
-- “Should I cut the longs overnight?” is refused.
-
----
-
-## System design
-
-For a reviewer.
+## Architecture
 
 ```text
                          ┌──────────── MVPConfig ────────────┐
                          │ as_of · compare_to · horizon · LLM │
                          └────────────────┬──────────────────┘
+                                          ▼
+                                   run_mvp() / compact assessment
                                           │
                                           ▼
-                                   run_mvp()  ◄── single entry
-                                          │
-            ┌─────────────────────────────┼─────────────────────────────┐
-            │                             │                             │
-            ▼                             ▼                             ▼
-   ┌────────────────┐          ┌──────────────────┐          ┌───────────────────┐
-   │ UMD / DM       │          │ PM momentum book │          │ Unwind +          │
-   │ comparison     │          │ (S&P 10/10 demo) │          │ crowding monitor  │
-   └───────┬────────┘          └────────┬─────────┘          └─────────┬─────────┘
-           │                            │                              │
-           └────────────────────────────┴──────────────────────────────┘
+                              Immutable risk snapshot
                                           │
                                           ▼
-                              Deterministic risk read
-                              (immutable source of truth)
+                    run_agent()  — hand-written loop, no LangGraph
                                           │
-                                          ▼
-                         Investigation agent loop
-                                          │
-                           ┌──────────────┴──────────────┐
-                           ▼                             ▼
-                  Notebook report               WhatsApp note
+              ┌───────────────────────────┼───────────────────────────┐
+              ▼                           ▼                           ▼
+     LLM / heuristic planner      deterministic executor        calibrated PM note
+     structured AgentDecision     allowlisted read-only tools   + AgentRunTrace
 ```
 
-1. **Book and market state first.**  
-2. **The agent investigates; it does not score.**  
-3. **AI cannot change the numbers.**  
-4. **Missing evidence stays missing.**  
-5. **Only information that was public by the selected close is allowed.**
+There is no multi-agent framework. One planner, one executor, one bounded loop.
+
+---
+
+## Agent / tool contracts
+
+All executable actions come through validated structured output (`src/agent/models.py`). Free-form model text is never parsed to decide what runs.
+
+```python
+class ToolCall(BaseModel):
+    id: str
+    name: str   # allowlisted by the executor, not by the prompt alone
+    args: dict[str, Any]
+
+class AgentDecision(BaseModel):
+    action: Literal["call_tools", "finish", "escalate"]
+    hypothesis: str
+    reason: str
+    tool_calls: list[ToolCall] = []
+    final_assessment: str | None = None
+    open_questions: list[str] = []
+```
+
+Read-only tools (`src/tools/`):
+
+| Tool | Role |
+|---|---|
+| `get_book_state` | Deterministic current PM-book risk snapshot |
+| `get_factor_state` | UMD / regime / recovery state |
+| `get_cluster_exposure` | Concentration / theme / long-short pressure |
+| `compare_prior_state` | Compare with a previously loaded compact assessment |
+| `search_news` | Point-in-time public news (GDELT + frozen packs) |
+| `search_positioning` | Crowding / positioning *proxies* from bundled sources |
+| `search_filings` | Bundled earnings / IR notes (not live EDGAR) |
+| `inspect_name` | Drill into one ticker against holdings + cluster |
+
+If the original repo cannot support a tool with live institutional data, the adapter says so and returns what the bundled pack actually contains. Missing evidence stays missing.
+
+---
+
+## Safety invariants (enforced in Python)
+
+1. The agent cannot modify deterministic risk metrics.
+2. The agent cannot modify thresholds or triggers.
+3. The agent cannot convert qualitative evidence into a crash probability.
+4. Evidence published after the assessment cutoff is rejected.
+5. Missing evidence remains missing.
+6. The agent cannot recommend or execute a trade (trade language is stripped from the note).
+7. The LLM cannot override quantitative state.
+8. The loop is bounded (`MAX_STEPS = 6`).
+9. Tool access is allowlisted. Unknown tools become error observations.
+10. Final output distinguishes **observed / inferred / against / not confirmed**.
+
+Prompts restate these rules. They are not the control plane.
+
+Executor also enforces: argument validation, per-tool timeout, overall investigation deadline (`OVERALL_DEADLINE_SECONDS = 10`), parallel independent reads in one planner step, canonical-arg dedup, and failure isolation (one broken read does not kill the run).
+
+---
+
+## One example trace
+
+```text
+Step 1
+hypothesis=localized crowded unwind
+tools=['get_cluster_exposure', 'search_positioning', 'search_news']
+
+Step 1 results
+  get_cluster_exposure status=ok
+  search_positioning status=ok
+  search_news status=ok
+
+Step 2
+hypothesis=forced deleveraging still unconfirmed
+tools=['inspect_name']
+
+Step 2 results
+  inspect_name status=ok COHR
+
+STOP: EVIDENCE_SUFFICIENT
+```
+
+`AgentRunTrace` records `run_id`, `as_of_date`, `assessment_cutoff`, decisions, tool calls, tool results, errors, `stop_reason`, and the calibrated buckets. It does not store hidden chain-of-thought or API keys.
+
+---
+
+## Failure handling
+
+| Failure | Behavior |
+|---|---|
+| Malformed planner JSON | Stop `MALFORMED_PLANNER_OUTPUT`; no tools run from that text |
+| Unknown tool | Observation `error_type=unknown_tool`; loop continues |
+| Invalid arguments | Observation `error_type=invalid_args`; no crash |
+| Duplicate read | Observation `status=duplicate`; not re-executed |
+| Tool timeout | Observation `status=timeout`; other parallel reads may still succeed |
+| One parallel tool raises | Isolated `tool_exception`; siblings still return |
+| Overall deadline | Stop `DEADLINE_EXCEEDED` |
+| Post-cutoff document | Dropped; `discarded_post_cutoff` counted; content never enters the note |
+| Planner repeats the same search | Duplicate observation, then `UNRESOLVABLE` |
+| Max steps | Stop `MAX_STEPS` |
 
 ---
 
@@ -182,252 +228,81 @@ Requirements: Python **3.11–3.14** and [`uv`](https://docs.astral.sh/uv/).
 ```bash
 uv sync --locked --all-groups
 uv run python -m src.mvp.demo_smoke_test
-uv run python -m pytest -q
-uv run --with jupyterlab jupyter lab notebooks/final_mvp_demo.ipynb
-uv run python scripts/run_monitor.py --as-of-date 2026-05-29 --evidence-cutoff "2026-05-29 16:00 ET"
+uv run pytest -q
+uv run python scripts/run_agent.py \
+  --as-of-date 2026-05-29 \
+  --verbose
 ```
+
+`--planner auto` (default) uses DeepSeek when `DEEPSEEK_API_KEY` is set, otherwise the fail-closed heuristic planner. Both emit the same `AgentDecision` schema. The executor does not care which planner produced it.
 
 ```python
-from src.mvp.config import MVPConfig
-from src.mvp.pipeline import run_mvp
-from src.agent import run_investigation_agent
+from src.agent import run_agent
 
-config = MVPConfig(
-    as_of_date="2026-05-29",
-    compare_to_date="2026-04-30",
-    threshold_profile="default",
-    horizon_days=20,
-    use_llm=False,  # library default; notebook demo uses True
-)
-result = run_mvp(config)
-agent = run_investigation_agent(
-    as_of_date=config.as_of_date,
-    max_steps=4,
-    verbose=True,
-    mvp_result=result,
-)
-print(agent.report)
+result = run_agent(as_of_date="2026-05-29", verbose=True)
+print(result.report)
+print(result.trace.stop_reason)
 ```
 
-**Date note:** the primary frozen product pack is **2026-05-29**. `demo_smoke_test` / `default_demo_config()` currently use **2026-06-30** (bundled panel coverage). Frozen packs do not change with the notebook `CONFIG`; the live `run_mvp` cell does.
-
-### Hermes + WhatsApp quick setup
-
-Local Mac only. Do not commit `~/.hermes/`, phone numbers, or QR sessions. Symlink **this repo’s** skill (not a copy under `~/integrations`). Full steps: [`docs/hermes_whatsapp_poc.md`](docs/hermes_whatsapp_poc.md).
-
-```bash
-uv sync --locked --all-groups
-uv run python scripts/run_monitor.py \
-  --as-of-date 2026-05-29 \
-  --evidence-cutoff "2026-05-29 16:00 ET" \
-  --output-json outputs/latest_assessment.json
-
-mkdir -p ~/.hermes/skills
-ln -sfn "$(pwd)/integrations/hermes/momentum-risk-monitor" \
-  ~/.hermes/skills/momentum-risk-monitor
-```
-
-In `~/.hermes/config.yaml` (quote `"off"`):
-
-```yaml
-display:
-  tool_progress: "off"
-  show_reasoning: false
-  personality: concise
-  platforms:
-    whatsapp:
-      tool_progress: "off"
-      show_reasoning: false
-      streaming: false
-whatsapp:
-  reply_prefix: ""
-```
-
-```bash
-hermes gateway setup    # pick WhatsApp, scan QR (dedicated number)
-hermes gateway run      # no -v
-```
-
-WhatsApp, in order:
-
-```text
-/verbose off
-/sethome
-/new now
-/momentum-risk-monitor Why is this not a Khandani–Lo unwind? Short version only.
-```
-
-Expect the same short PM note as above. Setup and operator details: [`docs/hermes_whatsapp_poc.md`](docs/hermes_whatsapp_poc.md).
+The deterministic monitor CLI is unchanged: `scripts/run_monitor.py`.
 
 ---
 
-## LLM interpretation (DeepSeek)
+## Eval cases
 
-Deterministic metrics, thresholds, triggers, and risk state are always computed first. The LLM is an interpretation layer only — including inside the investigation agent.
+Small behavior suite on frozen-case shaped states (`tests/agent/test_evals.py`):
 
-| Mode | How to run | Behavior |
+| Case | Date | Expectation |
 |---|---|---|
-| **Offline deterministic** | `use_llm=False` (`MVPConfig` library default) | No API call. Evidence Card + PM narrative use calibrated deterministic text. The agent uses a heuristic classifier. |
-| **Live DeepSeek-assisted** | `notebooks/demo_setup.py` sets `USE_LLM=True` + `DEEPSEEK_API_KEY` in `.env` | `final_mvp_demo.ipynb` injects `DeepSeekEvidenceInterpreter` and `DeepSeekPMResponseInterpreter` into `run_mvp`. Missing key, HTTP failure, or schema validation fails closed to deterministic text. |
+| Semi-unwind | 2026-05-29 | Crowding-related tools; terminates; no state mutation |
+| Recovery-crash reference | 2020-03-24 | Factor / news tools; `score_is_probability` stays false |
+| Quiet control | 2024-01-05 | No evidence search; `NO_INVESTIGATION_NEEDED` |
 
-The demo runbook is configured for the live path (`USE_LLM=True` in `notebooks/demo_setup.py`). Without a key it still runs via fail-closed deterministic fallback and never rewrites metrics.
+Plus explicit failure tests in `tests/agent/test_executor_failures.py`. Most tests inject a scripted or heuristic planner. A live LLM eval is optional.
 
-The LLM cannot rewrite: metric · threshold · trigger · risk state.
+---
 
-To enable the live path, create `.env` in the repository root with:
+## Limitations
 
-    DEEPSEEK_API_KEY=sk-your-key
-    ANTHROPIC_API_KEY=xxxx
+- This is an **investigation agent**, not a trading agent.
+- Positioning and filings tools wrap **bundled / local** evidence. They do not observe prime-broker leverage or pull live EDGAR.
+- `search_news` is the dated GDELT panel plus frozen case packs, not a live web crawl.
+- Monitoring severity is a relative band. It is **not** a crash probability.
+- The demo book is an equal-weight S&P 500 12-1 long-10 / short-10 proxy, not a live institutional book.
+- Without `DEEPSEEK_API_KEY`, the planner falls back to a small heuristic that still goes through the executor.
 
-A separate, optional **public narrative-shift POC** uses the DeepSeek
-Responses API with server-side web search. It is exploratory only and does
-not change the scorecard. Install the extra with `uv sync --group poc`.
-See [`docs/narrative_shift_poc.md`](docs/narrative_shift_poc.md).
+Fuller product caveats: [`docs/limitations.md`](docs/limitations.md). Methodology: [`docs/methodology.md`](docs/methodology.md).
 
 ---
 
 ## Mechanisms
 
-The same drawdown can be ordinary noise, a **recovery-driven reversal**, or a **crowded-position unwind**. The agent investigates these lenses separately; it does not merge them into one score.
+The agent may investigate these lenses separately. It does not merge them into one opaque score.
 
-```text
-1. Locate the pressure
-   Long leg, short leg, market regime, or concentrated theme?
+**Daniel–Moskowitz recovery crash:** deep prior drawdown → rapid recovery → loser rebound → short-leg pain.
 
-2. Identify the mechanism
-   Recovery reversal, crowded unwind, or ordinary noise?
-
-3. Challenge the read
-   What supports it? What contradicts it? What is still missing?
-
-4. Choose the next check
-   Maintain monitoring, inspect exposures, request better positioning data,
-   or discuss whether risk escalation deserves review.
-```
-
-### 1. Recovery-driven momentum crash (Daniel–Moskowitz)
-
-```text
-Severe market drawdown
-        ↓
-Winners become relatively defensive
-Losers become distressed / high beta
-        ↓
-Fast market recovery
-        ↓
-Losers rebound faster than winners
-        ↓
-The short leg loses heavily
-        ↓
-Momentum reverses sharply
-```
-
-Dangerous condition is not “the market is rising.” It is **deep prior drawdown → rapid recovery → loser rebound → short-leg pain**.
-
-### 2. Crowded-position unwind (Khandani–Lo)
-
-```text
-Concentrated positions / narrow breadth / shared themes
-        ↓
-Similar investors reduce exposure
-        ↓
-One-sided selling or short covering
-        ↓
-Weak liquidity absorption
-        ↓
-Correlated losses propagate across books
-```
-
-Crowding is a **risk amplifier**, not proof of forced deleveraging. Escalate only when concentration, correlated selling, weak absorption, and positioning evidence begin to line up.
+**Khandani–Lo crowded unwind:** concentrated / shared-theme positions → similar investors reduce exposure → one-sided selling → weak liquidity absorption. Crowding is a risk amplifier, not proof of forced deleveraging.
 
 ---
 
 ## Repository map
 
 ```text
-momentum-tail-risk-monitor/
-├── README.md
-├── docs/
-│   ├── methodology.md           # technical methodology
-│   ├── wiki/                    # per-metric threshold wiki (why / cutoff / what a move means)
-│   ├── limitations.md
-│   ├── demo_walkthrough.md
-│   ├── hermes_whatsapp_poc.md   # Hermes + unofficial WhatsApp Baileys setup
-│   ├── narrative_shift_poc.md   # exploratory public-narrative POC (not scorecard)
-│   ├── narrative_shift_poc_simulated.md  # simulated POC report (not a live API result)
-│   ├── production_path.md       # production path (not an internal todo list)
-│   ├── architecture_to_value.md # component → PM question map
-│   └── figures/                 # offline PM workflow prototype
-├── prompts/
-│   └── narrative_shift_poc.txt  # editable user prompt for the narrative POC
-├── notebooks/
-│   └── final_mvp_demo.ipynb     # step-by-step runbook for the PPT demo
-├── scripts/
-│   ├── run_monitor.py           # compact JSON CLI over run_mvp()
-│   ├── compare_monitor_state.py # previous-state compare for scheduled runs
-│   └── run_narrative_shift_poc.py  # exploratory DeepSeek Responses narrative POC
-├── integrations/hermes/         # Hermes skill (copy/symlink into ~/.hermes/skills)
-├── src/
-│   ├── agent.py                 # hand-written investigation loop (does not change risk state)
-│   ├── agent_prompts.py
-│   ├── mvp/                     # config, run_mvp, evidence card, PM response
-│   ├── monitoring/              # scorecard, unwind, crowding proxies
-│   ├── portfolio/               # 12-1 L10/S10 construction
-│   ├── regime/                  # market-state classification
-│   ├── risk/                    # beta, legs, concentration
-│   ├── evidence/                # timestamped evidence + optional LLM
-│   ├── features/
-│   ├── data/
-│   └── utils/
-├── tests/                       # regression guards, grouped to match src/
-│   ├── agent/
-│   ├── data/
-│   ├── evidence/
-│   ├── features/
-│   ├── monitoring/
-│   ├── mvp/
-│   ├── portfolio/
-│   ├── regime/
-│   ├── research/
-│   └── risk/
-├── data/
-│   ├── processed/               # bundled public processed panels
-│   ├── corpus/                  # versioned evidence corpus
-│   └── evaluation/              # frozen case evidence packs
-└── outputs/
-    ├── current_semi_unwind/                 # PRIMARY example PM output (2026-05-29)
-    ├── march_2020_reference/                # historical validation
-    ├── quiet_control_2024/                  # quiet control case pack
-    ├── quiet_control_example_risk_output/   # generated quiet-control card (2024-01-05)
-    ├── cross_case_comparison.md
-    ├── evidence_cache/                      # exact-date validated classification caches
-    └── research_validation/                 # episode fingerprints / AI-value summary
+momentum-risk-agent/
+├── src/agent/           # planner, executor, loop, contracts, PM note
+│   └── heuristic.py     # original pre-programmed loop (compatibility)
+├── src/tools/           # read-only tool adapters
+├── src/mvp/             # deterministic monitor, evidence card, PM response
+├── src/monitoring/      # scorecard, unwind, crowding proxies
+├── scripts/run_agent.py # investigation CLI
+├── scripts/run_monitor.py
+└── tests/agent/         # failure tests + frozen-case evals
 ```
-
----
-
-## Production extensions
-
-If extending beyond the 20-hour research MVP:
-
-1. Plug in actual PM holdings, weights, and constraints.  
-2. Replace L10/S10 with percentile-based, risk-neutralized construction.  
-3. Harden point-in-time universe / industry history and live data adapters.  
-4. Add institutional holdings, borrow, ETF/options flow, and liquidity inputs — then reuse the same monitoring workflow (including industry / country / index-futures momentum).
-
-Also retained for a fuller build-out: multi-factor risk exposures and a service layer to serve the PM front end (e.g. FastAPI + SSE).
-
-Broader path: [`docs/production_path.md`](docs/production_path.md).
 
 ---
 
 ## References
 
-1. **Daniel, K., & Moskowitz, T. J. (2016).** *Momentum Crashes.*  
-   Recovery-driven momentum-crash mechanism.
-
-2. **Khandani, A. E., & Lo, A. W. (2007; 2011).** *What Happened to the Quants in August 2007?*  
-   Crowded-position and quant-unwind mechanism.
-
-3. **Ken French Data Library.**  
-   UMD and market-factor data used as published comparison context.
+1. **Daniel, K., & Moskowitz, T. J. (2016).** *Momentum Crashes.*
+2. **Khandani, A. E., & Lo, A. W. (2007; 2011).** *What Happened to the Quants in August 2007?*
+3. **Ken French Data Library.**
