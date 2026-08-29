@@ -267,7 +267,15 @@ def test_combined_note_is_calibrated_once() -> None:
         },
     )
     report = result.report
-    for heading in ("Current read", "Observed:", "Inferred:", "Against:", "Not confirmed:", "Investigation path:"):
+    for heading in (
+        "Current read",
+        "Observed:",
+        "Inferred:",
+        "Against:",
+        "Not confirmed:",
+        "Citations:",
+        "Investigation path:",
+    ):
         assert heading in report
     assert report.count("Observed:") == 1
     assert "Orchestrator spawned: crowding, recovery" in report

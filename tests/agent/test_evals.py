@@ -86,6 +86,7 @@ def test_eval_report_calibration_sections_exist() -> None:
         "Inferred:",
         "Against:",
         "Not confirmed:",
+        "Citations:",
         "Investigation path:",
         "What changed:",
         "Next useful check:",

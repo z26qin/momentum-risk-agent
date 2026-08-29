@@ -116,6 +116,7 @@ def calibrated_buckets(state: AgentState) -> dict[str, Any]:
         "next_useful_check": _next_check(state, classified),
         "what_changed": _what_changed(state),
         "current_read": _current_read(state, classified),
+        "citations": _citations(state) or ["None"],
     }
 
 
@@ -130,6 +131,7 @@ def render_pm_note(buckets: Mapping[str, Any], path: str) -> str:
         f"Inferred:\n{_bullets(buckets['inferred'])}\n\n"
         f"Against:\n{_bullets(buckets['contradicted'])}\n\n"
         f"Not confirmed:\n{_bullets(buckets['not_confirmed'])}\n\n"
+        f"Citations:\n{_bullets(buckets.get('citations') or ['None'])}\n\n"
         f"Investigation path:\n{path}\n\n"
         f"What changed:\n{buckets['what_changed']}\n\n"
         f"Next useful check:\n{buckets['next_useful_check']}\n"
@@ -156,6 +158,7 @@ def build_combined_pm_note(
     inferred: list[str] = []
     against: list[str] = []
     not_confirmed: list[str] = []
+    citations: list[str] = []
     snapshot_set = set(snapshot)
     for name in spawned:
         buckets = mechanism_buckets.get(name)
@@ -166,6 +169,9 @@ def build_combined_pm_note(
         inferred.extend(_label(buckets["inferred"], label))
         against.extend(_label(buckets["contradicted"], label))
         not_confirmed.extend(_label(buckets["not_confirmed"], label))
+        citations.extend(
+            _label([item for item in (buckets.get("citations") or []) if item != "None"], label)
+        )
 
     buckets = {
         "observed": _clean_lines(observed) or ["No additional observations beyond the snapshot."],
@@ -175,6 +181,7 @@ def build_combined_pm_note(
         "current_read": _combined_current_read(stop_reason, spawned, mechanism_buckets),
         "what_changed": _combined_what_changed(risk_state, spawned, mechanism_buckets),
         "next_useful_check": _combined_next_check(risk_state, spawned, mechanism_buckets),
+        "citations": _clean_lines(citations) or ["None"],
         "score_is_probability": False,
         "spawned": list(spawned),
         "mechanisms": mechanism_buckets,
@@ -276,6 +283,25 @@ def _mechanism(state: AgentState) -> str | None:
     return None
 
 
+def _cite_doc(doc: Mapping[str, Any]) -> str:
+    eid = str(doc.get("evidence_id") or "").strip()
+    published = str(doc.get("published_at") or "").strip()[:10]
+    headline = str(doc.get("headline") or "").strip()[:160]
+    return " ".join(part for part in ((f"[{eid}]" if eid else ""), published, headline) if part)
+
+
+def _citations(state: AgentState) -> list[str]:
+    return list(
+        dict.fromkeys(
+            line
+            for doc in state.evidence
+            if isinstance(doc, dict)
+            for line in [_cite_doc(doc)]
+            if line
+        )
+    )
+
+
 def _observed_from_tool(item: ToolObservation) -> list[str]:
     if item.status != "ok" or not isinstance(item.payload, dict):
         if item.status == "ok":
@@ -299,10 +325,10 @@ def _observed_from_tool(item: ToolObservation) -> list[str]:
             + (f" leg={leg}" if leg else "")
         )
     documents = payload.get("documents") if isinstance(payload.get("documents"), list) else []
-    if documents:
-        headline = str((documents[0] or {}).get("headline") or "")[:160]
-        if headline:
-            lines.append(f"{item.name}: {headline}")
+    if documents and isinstance(documents[0], dict):
+        cited = _cite_doc(documents[0])
+        if cited:
+            lines.append(f"{item.name}: {cited}")
         if payload.get("discarded_post_cutoff"):
             lines.append(
                 f"{item.name} discarded {payload['discarded_post_cutoff']} post-cutoff document(s)"

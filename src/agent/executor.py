@@ -18,7 +18,7 @@ from src.agent.models import AgentDecision, ToolCall, ToolObservation
 from src.agent.state import AgentState
 from src.agent_prompts import published_by_cutoff
 from src.tools.context import ToolContext
-from src.tools.registry import MAX_PARALLEL_TOOLS, ToolRegistry, default_registry
+from src.tools.registry import MAX_PARALLEL_TOOLS, TOOL_RETRIES, ToolRegistry, default_registry
 
 Monotonic = Callable[[], float]
 
@@ -144,9 +144,8 @@ class Executor:
             futures = {}
             for call, args, parsed in runnable:
                 spec = self.registry.get(call.name)
-                timeout = min(spec.timeout_seconds if spec else 0.1, max(0.0, remaining_seconds))
                 futures[
-                    pool.submit(self._run_one, spec, ctx, parsed, timeout)
+                    pool.submit(self._run_with_retry, spec, ctx, parsed, remaining_seconds)
                 ] = (call, args)
             done, not_done = wait(futures, timeout=max(0.01, remaining_seconds))
             for future in done:
@@ -174,6 +173,29 @@ class Executor:
                     _error(call, args, "deadline", "deadline", "overall investigation deadline reached")
                 )
         return observations
+
+    def _run_with_retry(self, spec, ctx: ToolContext, parsed, remaining: float) -> tuple[Any, int, int]:
+        """One extra attempt on timeout / handler failure if budget remains."""
+
+        if spec is None:
+            raise RuntimeError("missing tool spec")
+        leftover = remaining
+        last: BaseException | None = None
+        for attempt in range(1 + TOOL_RETRIES):
+            timeout = min(spec.timeout_seconds, max(0.0, leftover))
+            if timeout <= 0:
+                break
+            started = self.monotonic()
+            try:
+                return self._run_one(spec, ctx, parsed, timeout)
+            except (TimeoutError, Exception) as exc:  # noqa: BLE001
+                last = exc
+                leftover -= self.monotonic() - started
+                if attempt >= TOOL_RETRIES or leftover < 0.05:
+                    raise
+        if last is not None:
+            raise last
+        raise TimeoutError("tool exceeded its timeout")
 
     def _run_one(self, spec, ctx: ToolContext, parsed, timeout: float) -> tuple[Any, int, int]:
         if spec is None:

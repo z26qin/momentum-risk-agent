@@ -287,6 +287,9 @@ def test_post_cutoff_evidence_is_rejected() -> None:
     assert "FUTURE" not in ids
     assert result.observations[0].discarded_post_cutoff >= 1
     assert "future leak" not in result.report.lower()
+    assert "[OK]" in result.report
+    assert "Citations:" in result.report
+    assert "FUTURE" not in result.report
 
 
 def test_repeated_same_search_stops_without_looping() -> None:
@@ -370,3 +373,69 @@ def test_llm_planner_accepts_structured_json_only() -> None:
     assert result.planner_kind == "llm"
     assert result.stop_reason == "NO_INVESTIGATION_NEEDED"
     assert result.observations == ()
+
+
+def test_retryable_tool_error_retries_once() -> None:
+    calls = {"n": 0}
+
+    def flaky(_ctx, _args):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("transient")
+        return {"ok": True}
+
+    result = run_agent(
+        risk_state=_crowding_risk(),
+        planner=ScriptedPlanner([_decision("get_book_state"), _finish()]),
+        registry=_registry({"get_book_state": flaky}),
+    )
+    assert calls["n"] == 2
+    assert result.observations[0].status == "ok"
+    assert result.stop_reason == "EVIDENCE_SUFFICIENT"
+
+
+def test_llm_malformed_falls_back_to_heuristic() -> None:
+    from src.agent.planner import LLMPlanner
+
+    def transport(**kwargs):
+        del kwargs
+        return "not-json"
+
+    def cluster(_ctx, _args):
+        return {"cluster_symbols": ["CIEN", "COHR", "LITE"]}
+
+    def news(_ctx, _args):
+        return {
+            "documents": [
+                {
+                    "evidence_id": "E1",
+                    "published_at": "2026-05-04",
+                    "headline": "hedge fund technology exposure reduction",
+                }
+            ]
+        }
+
+    result = run_agent(
+        risk_state=_crowding_risk(),
+        planner=LLMPlanner(api_key="test", transport=transport),
+        registry=_registry(
+            {
+                "get_cluster_exposure": cluster,
+                "search_positioning": news,
+                "search_news": news,
+                "inspect_name": lambda _ctx, args: {
+                    "symbol": str(getattr(args, "symbol", "") or "CIEN"),
+                    "in_theme_cluster": True,
+                    "in_book": True,
+                },
+                "get_book_state": _ok,
+            },
+            evidence={"search_positioning", "search_news"},
+        ),
+    )
+    assert any("falling back to heuristic" in item for item in result.state.errors)
+    assert result.stop_reason != "MALFORMED_PLANNER_OUTPUT"
+    assert result.planner_kind.startswith("heuristic")
+    names = [item.name for item in result.observations if item.status == "ok"]
+    assert "get_cluster_exposure" in names
+    assert "[E1]" in result.report

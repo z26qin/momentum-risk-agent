@@ -68,6 +68,9 @@ Against:
 Not confirmed:
 - Broad forced deleveraging / financing stress
 
+Citations:
+- [EVID-…] 2026-05-04 hedge fund technology exposure reduction
+
 Investigation path:
 1. Orchestrator spawned: crowding
 2. [crowding] localized crowded unwind · tools=['get_cluster_exposure', 'search_positioning', 'search_news']
