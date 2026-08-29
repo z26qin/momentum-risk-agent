@@ -83,7 +83,7 @@ def calibrated_buckets(state: AgentState) -> dict[str, Any]:
     not_confirmed = [sanitize_text(item) for item in (classified.get("missing_evidence") or [])]
     for item in (classified.get("contradicting_claims") or []):
         against.append(sanitize_text(item))
-    if "crowded_theme_unwind" in (risk.get("supported_mechanisms") or []) or cluster:
+    if "crowded_theme_unwind" in (risk.get("supported_mechanisms") or []) or risk.get("theme_cluster"):
         if not any("forced" in item.lower() for item in not_confirmed):
             not_confirmed.append("Broad forced deleveraging / financing stress")
     if str(risk.get("overall_risk_state") or "") != "panic_elevated":
