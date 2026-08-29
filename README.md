@@ -13,49 +13,40 @@ It answers:
 
 It does **not** trade, de-gross, or publish a crash probability.
 
-This repository is a **new project** cloned from [`momentum-tail-risk-monitor`](https://github.com/z26qin/momentum-tail-risk-monitor). The quantitative engine, evidence cutoff, fail-closed behavior, and PM-facing calibration are preserved. The architectural upgrade is the investigation loop:
+This repository is a **new project** cloned from [`momentum-tail-risk-monitor`](https://github.com/z26qin/momentum-tail-risk-monitor). The quantitative engine, evidence cutoff, fail-closed behavior, and PM-facing calibration are preserved.
 
-> **Model plans. Executor enforces invariants.**
+This is an **investigation agent**, not a trading agent, and not a multi-agent debate club. Specialists do not talk to each other. The deterministic monitor remains the source of truth.
 
 ---
 
-## Original system
+## How the architecture evolved
+
+**Original cloned project:** deterministic monitor + a mostly fixed investigation workflow (`src/agent/heuristic.py`, still present for compatibility tests).
+
+**Previous MVP in this repo:** one LLM (or heuristic) planner + one executor over the full 8-tool registry. Evidence from crowding and recovery landed in a single `AgentState`.
+
+**Now:** a **code orchestrator** decides which mechanism monitors to spawn. Each monitor is the existing `run_agent()` loop with its own planner prompt and a **subset** tool registry. The orchestrator then synthesizes one calibrated PM note in code. Findings are never merged into a crash score.
 
 ```text
-deterministic monitor
-        ↓
-mostly fixed investigation workflow
-        ↓
-PM note
-```
-
-The original loop in `src/agent/heuristic.py` still exists (compatibility tests and notebook path). It chooses among a small, pre-programmed set of mechanism searches.
-
-## New system
-
-```text
-deterministic monitor
+deterministic monitor (unchanged)
         ↓
 immutable RiskState
         ↓
-AgentState
+Orchestrator  (CODE decides which specialists to spawn)
         ↓
-LLM planner  →  structured AgentDecision
+   ┌────┴────┐
+   ↓         ↓
+KL crowding  DM recovery
+monitor      monitor
+(each is run_agent with its own planner prompt + ToolRegistry subset)
+   ↓         ↓
+scoped traces
         ↓
-deterministic executor  (allowlist, args, timeout, dedup, cutoff)
-        ↓
-validated tool observations
-        ↓
-AgentState update
-        ↓
-LLM planner
-        ↓
-...
-        ↓
-FINISH / ESCALATE  →  calibrated PM note + audit trace
+Orchestrator synthesizes one PM note in CODE
+(never merge into a crash score)
 ```
 
-The quantitative engine remains the source of truth. The agent investigates the state; it does not change it.
+There is no LangGraph, CrewAI, AutoGen, or other orchestration framework. Quiet books spawn **nobody** and do not search.
 
 ---
 
@@ -83,9 +74,11 @@ Not confirmed:
 - Broad forced deleveraging / financing stress
 
 Investigation path:
-1. localized crowded unwind · tools=['get_cluster_exposure', 'search_positioning', 'search_news']
-2. forced deleveraging still unconfirmed · tools=['inspect_name']
-3. STOP: EVIDENCE_SUFFICIENT
+1. Orchestrator spawned: crowding
+2. [crowding] localized crowded unwind · tools=['get_cluster_exposure', 'search_positioning', 'search_news']
+3. [crowding] forced deleveraging still unconfirmed · tools=['inspect_name']
+4. [crowding] STOP: EVIDENCE_SUFFICIENT
+5. Combined STOP: EVIDENCE_SUFFICIENT
 
 What changed:
 - Deterministic snapshot already compared with 2026-04-30; this investigation did not recompute that delta.
@@ -94,7 +87,7 @@ Next useful check:
 - Watch whether selling spreads outside the cluster.
 ```
 
-Same rules on two other dates: [March 2020](outputs/march_2020_reference/pm_case_read.md) is a recovery-crash reference; [January 2024](outputs/quiet_control_2024/pm_case_read.md) should not escalate. Cross-case table: [`outputs/cross_case_comparison.md`](outputs/cross_case_comparison.md).
+Same rules on two other dates: [March 2020](outputs/march_2020_reference/pm_case_read.md) is a recovery-crash reference; [January 2024](outputs/quiet_control_2024/pm_case_read.md) should not escalate and **no specialists run**. Cross-case table: [`outputs/cross_case_comparison.md`](outputs/cross_case_comparison.md).
 
 ---
 
@@ -111,21 +104,28 @@ Same rules on two other dates: [March 2020](outputs/march_2020_reference/pm_case
                               Immutable risk snapshot
                                           │
                                           ▼
-                    run_agent()  — hand-written loop, no LangGraph
+              run_orchestrated_investigation()  — code router, no LangGraph
                                           │
-              ┌───────────────────────────┼───────────────────────────┐
-              ▼                           ▼                           ▼
-     LLM / heuristic planner      deterministic executor        calibrated PM note
-     structured AgentDecision     allowlisted read-only tools   + AgentRunTrace
+                    ┌─────────────────────┴─────────────────────┐
+                    ▼                                           ▼
+         crowding monitor                              recovery monitor
+         run_agent() + subset registry                 run_agent() + subset registry
+         planner → AgentDecision                       planner → AgentDecision
+         same deterministic executor                   same deterministic executor
+                    │                                           │
+                    └─────────────────────┬─────────────────────┘
+                                          ▼
+                         calibrated PM note (code synthesis)
+                         + OrchestratorTrace
 ```
 
-There is no multi-agent framework. One planner, one executor, one bounded loop.
+`--mode single` keeps the previous one-planner loop for demos and existing tests.
 
 ---
 
 ## Agent / tool contracts
 
-All executable actions come through validated structured output (`src/agent/models.py`). Free-form model text is never parsed to decide what runs.
+All executable actions come through validated structured output (`src/agent/models.py`). Free-form model text is never parsed to decide what runs. The orchestrator itself does **not** call market or evidence tools.
 
 ```python
 class ToolCall(BaseModel):
@@ -142,12 +142,19 @@ class AgentDecision(BaseModel):
     open_questions: list[str] = []
 ```
 
-Read-only tools (`src/tools/`):
+### Tool subsets
+
+| Monitor | Question | Allowlist |
+|---|---|---|
+| Khandani–Lo crowding | Localized crowded unwind, or forced deleveraging? | `get_cluster_exposure`, `search_positioning`, `search_news`, `inspect_name`, `get_book_state` |
+| Daniel–Moskowitz recovery | Recovery-driven loser rebound / lagging-leg crash setup? | `get_factor_state`, `get_book_state`, `search_news`, `compare_prior_state` |
+
+A specialist that requests a tool outside its registry gets `unknown_tool` from the existing executor. Full 8-tool registry (`src/tools/`):
 
 | Tool | Role |
 |---|---|
 | `get_book_state` | Deterministic current PM-book risk snapshot |
-| `get_factor_state` | UMD / regime / recovery state |
+| `get_factor_state` | UMD / regime / recovery state (`score_is_probability` is always false) |
 | `get_cluster_exposure` | Concentration / theme / long-short pressure |
 | `compare_prior_state` | Compare with a previously loaded compact assessment |
 | `search_news` | Point-in-time public news (GDELT + frozen packs) |
@@ -163,16 +170,18 @@ If the original repo cannot support a tool with live institutional data, the ada
 
 1. The agent cannot modify deterministic risk metrics.
 2. The agent cannot modify thresholds or triggers.
-3. The agent cannot convert qualitative evidence into a crash probability.
+3. The agent cannot convert qualitative evidence into a crash score. `score_is_probability` stays false.
 4. Evidence published after the assessment cutoff is rejected.
 5. Missing evidence remains missing.
 6. The agent cannot recommend or execute a trade (trade language is stripped from the note).
-7. The LLM cannot override quantitative state.
-8. The loop is bounded (`MAX_STEPS = 6`).
-9. Tool access is allowlisted. Unknown tools become error observations.
-10. Final output distinguishes **observed / inferred / against / not confirmed**.
+7. The LLM cannot override quantitative state. The orchestrator cannot override the quiet-book skip.
+8. Each specialist loop is bounded (`MAX_STEPS = 6`); specialists share one overall deadline.
+9. Tool access is allowlisted per specialist. Unknown tools become error observations.
+10. Final output distinguishes **observed / inferred / against / not confirmed**. Mechanism notes are not averaged into one score.
 
 Prompts restate these rules. They are not the control plane.
+
+Routing is code, using `no_meaningful_risk_signal`, `crowding_signal_present`, and `recovery_setup_present`. If the January 2024 quiet control has no meaningful signal, **zero** specialists spawn and **no** tools run (`NO_INVESTIGATION_NEEDED`).
 
 Executor also enforces: argument validation, per-tool timeout, overall investigation deadline (`OVERALL_DEADLINE_SECONDS = 10`), parallel independent reads in one planner step, canonical-arg dedup, and failure isolation (one broken read does not kill the run).
 
@@ -181,6 +190,11 @@ Executor also enforces: argument validation, per-tool timeout, overall investiga
 ## One example trace
 
 ```text
+Orchestrator: spawned=['crowding']
+
+=== Specialist: Crowding (Khandani–Lo) ===
+question: Is pressure a localized crowded unwind, or forced deleveraging?
+
 Step 1
 hypothesis=localized crowded unwind
 tools=['get_cluster_exposure', 'search_positioning', 'search_news']
@@ -197,10 +211,10 @@ tools=['inspect_name']
 Step 2 results
   inspect_name status=ok COHR
 
-STOP: EVIDENCE_SUFFICIENT
+[crowding] STOP: EVIDENCE_SUFFICIENT
 ```
 
-`AgentRunTrace` records `run_id`, `as_of_date`, `assessment_cutoff`, decisions, tool calls, tool results, errors, `stop_reason`, and the calibrated buckets. It does not store hidden chain-of-thought or API keys.
+`OrchestratorTrace` records routing decisions plus each specialist's `AgentRunTrace` (`run_id`, decisions, tool calls, tool results, errors, `stop_reason`, calibrated buckets). It does not store hidden chain-of-thought or API keys.
 
 ---
 
@@ -208,6 +222,7 @@ STOP: EVIDENCE_SUFFICIENT
 
 | Failure | Behavior |
 |---|---|
+| Quiet book | Orchestrator spawns nobody; `NO_INVESTIGATION_NEEDED`; no tools |
 | Malformed planner JSON | Stop `MALFORMED_PLANNER_OUTPUT`; no tools run from that text |
 | Unknown tool | Observation `error_type=unknown_tool`; loop continues |
 | Invalid arguments | Observation `error_type=invalid_args`; no crash |
@@ -228,18 +243,27 @@ Requirements: Python **3.11–3.14** and [`uv`](https://docs.astral.sh/uv/).
 ```bash
 uv sync --locked --all-groups
 uv run python -m src.mvp.demo_smoke_test
-uv run pytest -q
+uv run pytest tests/agent -q
 uv run python scripts/run_agent.py \
   --as-of-date 2026-05-29 \
-  --verbose
+  --verbose --planner heuristic
 ```
 
-`--planner auto` (default) uses DeepSeek when `DEEPSEEK_API_KEY` is set, otherwise the fail-closed heuristic planner. Both emit the same `AgentDecision` schema. The executor does not care which planner produced it.
+Default CLI path is the orchestrated investigation. `--planner auto` uses DeepSeek when `DEEPSEEK_API_KEY` is set, otherwise the fail-closed heuristic planner. Both emit the same `AgentDecision` schema. The executor does not care which planner produced it.
+
+```bash
+# Previous one-planner loop
+uv run python scripts/run_agent.py --mode single --as-of-date 2026-05-29 --verbose
+
+# Quiet control: no specialists, no search
+uv run python scripts/run_agent.py --as-of-date 2024-01-05 --verbose --planner heuristic
+```
 
 ```python
-from src.agent import run_agent
+from src.agent import run_orchestrated_investigation
 
-result = run_agent(as_of_date="2026-05-29", verbose=True)
+result = run_orchestrated_investigation(as_of_date="2026-05-29", verbose=True)
+print(result.spawned)
 print(result.report)
 print(result.trace.stop_reason)
 ```
@@ -250,13 +274,14 @@ The deterministic monitor CLI is unchanged: `scripts/run_monitor.py`.
 
 ## Eval cases
 
-Small behavior suite on frozen-case shaped states (`tests/agent/test_evals.py`):
+Small behavior suite on frozen-case shaped states (`tests/agent/test_evals.py`, `tests/agent/test_orchestrator.py`):
 
 | Case | Date | Expectation |
 |---|---|---|
-| Semi-unwind | 2026-05-29 | Crowding-related tools; terminates; no state mutation |
-| Recovery-crash reference | 2020-03-24 | Factor / news tools; `score_is_probability` stays false |
-| Quiet control | 2024-01-05 | No evidence search; `NO_INVESTIGATION_NEEDED` |
+| Semi-unwind | 2026-05-29 | Crowding specialist; recovery skipped unless recovery flags are set |
+| Recovery-crash reference | 2020-03-24 | Recovery specialist (`get_factor_state` + news); crowding skipped unless crowding flags are set |
+| Quiet control | 2024-01-05 | Zero specialists; no tools; `NO_INVESTIGATION_NEEDED` |
+| Both flags | synthetic | Both specialists; evidence stays mechanism-scoped |
 
 Plus explicit failure tests in `tests/agent/test_executor_failures.py`. Most tests inject a scripted or heuristic planner. A live LLM eval is optional.
 
@@ -265,11 +290,12 @@ Plus explicit failure tests in `tests/agent/test_executor_failures.py`. Most tes
 ## Limitations
 
 - This is an **investigation agent**, not a trading agent.
+- Specialists do not debate, vote, or chat. The orchestrator is code.
 - Positioning and filings tools wrap **bundled / local** evidence. They do not observe prime-broker leverage or pull live EDGAR.
 - `search_news` is the dated GDELT panel plus frozen case packs, not a live web crawl.
 - Monitoring severity is a relative band. It is **not** a crash probability.
 - The demo book is an equal-weight S&P 500 12-1 long-10 / short-10 proxy, not a live institutional book.
-- Without `DEEPSEEK_API_KEY`, the planner falls back to a small heuristic that still goes through the executor.
+- Without `DEEPSEEK_API_KEY`, planners fall back to a small heuristic that still goes through the executor.
 
 Fuller product caveats: [`docs/limitations.md`](docs/limitations.md). Methodology: [`docs/methodology.md`](docs/methodology.md).
 
@@ -289,14 +315,15 @@ The agent may investigate these lenses separately. It does not merge them into o
 
 ```text
 momentum-risk-agent/
-├── src/agent/           # planner, executor, loop, contracts, PM note
+├── src/agent/           # orchestrator, planner, executor, loop, contracts, PM note
+│   ├── orchestrator.py  # code router + combined synthesis
 │   └── heuristic.py     # original pre-programmed loop (compatibility)
-├── src/tools/           # read-only tool adapters
+├── src/tools/           # read-only tool adapters + specialist subsets
 ├── src/mvp/             # deterministic monitor, evidence card, PM response
 ├── src/monitoring/      # scorecard, unwind, crowding proxies
-├── scripts/run_agent.py # investigation CLI
+├── scripts/run_agent.py # investigation CLI (orchestrated default)
 ├── scripts/run_monitor.py
-└── tests/agent/         # failure tests + frozen-case evals
+└── tests/agent/         # failure tests + frozen-case evals + orchestrator
 ```
 
 ---

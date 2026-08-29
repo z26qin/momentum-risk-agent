@@ -70,14 +70,22 @@ def run_agent(
     use_llm: bool | None = None,
     monotonic: Monotonic = time.monotonic,
     processed_dir=DEFAULT_PROCESSED_DIR,
+    focus: str | None = None,
+    print_report: bool | None = None,
+    run_id: str | None = None,
 ) -> AgentRunResult:
     loaded = _load_risk_state(as_of_date, risk_state=risk_state, mvp_result=mvp_result)
     frozen, fingerprint = freeze_risk_state(loaded)
     del fingerprint
     cutoff = str(frozen.get("data_cutoff") or frozen.get("evidence_cutoff") or assessment_timestamp(as_of_date))
-    run_id = uuid.uuid4().hex[:12]
-    selected = resolve_planner(planner=planner, use_llm=use_llm)
+    run_id = run_id or uuid.uuid4().hex[:12]
     tools = registry or default_registry()
+    selected = resolve_planner(
+        planner=planner,
+        use_llm=use_llm,
+        focus=focus,
+        allowed_tools=tools.names(),
+    )
     executor = Executor(tools, monotonic=monotonic)
     prior = copy.deepcopy(dict(prior_state)) if prior_state is not None else None
     state = AgentState(
@@ -90,6 +98,7 @@ def run_agent(
         _risk_state=frozen,
         _risk_fingerprint=state_fingerprint(frozen),
         prior_state=prior,
+        focus=focus,
     )
     started = monotonic()
     _log(state, f"deterministic state loaded; planner={selected.kind}", verbose=verbose)
@@ -108,7 +117,8 @@ def run_agent(
     if state.status == "running":
         _stop(state, "MAX_STEPS", verbose=verbose)
     report = build_pm_note(state)
-    if verbose:
+    should_print = verbose if print_report is None else print_report
+    if should_print:
         print(report)
     trace = _build_trace(state, selected.kind, report)
     return AgentRunResult(

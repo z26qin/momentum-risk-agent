@@ -1,7 +1,9 @@
-"""Investigation agent: LLM planner + deterministic executor.
+"""Investigation agent: orchestrator plus planner/executor specialists.
 
 The original heuristic loop lives in ``src.agent.heuristic`` and remains the
-compatibility path for existing tests. ``run_agent`` is the product entry point.
+compatibility path for existing tests. ``run_orchestrated_investigation`` is
+the product entry point; ``run_agent`` is the single-planner loop each
+specialist reuses.
 """
 
 from src.agent.heuristic import (
@@ -24,7 +26,12 @@ from src.agent.heuristic import (
     update_memory,
 )
 from src.agent.loop import MAX_STEPS, OVERALL_DEADLINE_SECONDS, AgentRunResult, run_agent
-from src.agent.models import AgentDecision, AgentRunTrace, ToolCall, ToolObservation
+from src.agent.models import AgentDecision, AgentRunTrace, OrchestratorTrace, ToolCall, ToolObservation
+from src.agent.orchestrator import (
+    OrchestratedRunResult,
+    run_orchestrated_investigation,
+    select_specialists,
+)
 from src.agent.state import AgentState
 
 __all__ = [
@@ -42,6 +49,8 @@ __all__ = [
     "AgentRunTrace",
     "AgentState",
     "HeuristicAgentState",
+    "OrchestratedRunResult",
+    "OrchestratorTrace",
     "ToolCall",
     "ToolObservation",
     "build_pm_report",
@@ -53,5 +62,7 @@ __all__ = [
     "run_agent",
     "run_investigation_agent",
     "run_investigation_loop",
+    "run_orchestrated_investigation",
+    "select_specialists",
     "update_memory",
 ]

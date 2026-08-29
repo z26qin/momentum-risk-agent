@@ -36,8 +36,7 @@ def contains_forbidden(value: str | None) -> bool:
     return bool(_TRADE.search(text) or _CRASH_PROB.search(text))
 
 
-def calibrated_buckets(state: AgentState) -> dict[str, Any]:
-    risk = state.risk_state
+def snapshot_observed(risk: Mapping[str, Any]) -> list[str]:
     trigger_count = int(risk.get("deterministic_trigger_count") or 0)
     cluster = [str(item) for item in (risk.get("theme_cluster") or [])]
     unwind = str(risk.get("mechanical_unwind_state") or "NORMAL")
@@ -50,6 +49,12 @@ def calibrated_buckets(state: AgentState) -> dict[str, Any]:
     flags = [str(item) for item in (risk.get("structural_flags") or [])]
     if flags:
         observed.append("structural flags: " + ", ".join(flags))
+    return observed
+
+
+def calibrated_buckets(state: AgentState) -> dict[str, Any]:
+    risk = state.risk_state
+    observed = snapshot_observed(risk)
 
     for item in state.observations:
         observed.extend(_observed_from_tool(item))
@@ -72,7 +77,7 @@ def calibrated_buckets(state: AgentState) -> dict[str, Any]:
             inferred.append(cleaned)
         elif contains_forbidden(last.final_assessment):
             inferred.append(
-                "Model proposed a trade or crash probability; that text was dropped."
+                "Model proposed forbidden action language; that text was dropped."
             )
 
     not_confirmed = [sanitize_text(item) for item in (classified.get("missing_evidence") or [])]
@@ -192,6 +197,8 @@ def _what_changed(state: AgentState) -> str:
 
 
 def _mechanism(state: AgentState) -> str | None:
+    if state.focus in {"kl_crowding", "dm_recovery", "fundamentals"}:
+        return state.focus
     text = " ".join(state.investigated_hypotheses).lower()
     if any(token in text for token in ("crowd", "unwind", "theme", "cluster", "position")):
         return "kl_crowding"
@@ -209,6 +216,9 @@ def _observed_from_tool(item: ToolObservation) -> list[str]:
         return []
     payload = item.payload
     lines: list[str] = []
+    if item.name == "get_factor_state":
+        regime = payload.get("overall_risk_state")
+        lines.append(f"factor/regime: {regime}; score_is_probability=False")
     if item.name == "get_cluster_exposure":
         symbols = payload.get("cluster_symbols") or []
         if symbols:

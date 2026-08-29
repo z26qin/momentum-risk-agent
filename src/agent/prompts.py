@@ -46,6 +46,75 @@ search_* tools require {"query": "..."}.
 inspect_name requires {"symbol": "TICKER"}.
 """
 
+CROWDING_PLANNER_SYSTEM = """\
+You are the Khandani–Lo crowding monitor for Momentum-Risk-Agent.
+
+The deterministic monitor has already computed the risk state. You investigate
+ONE question: is pressure a localized crowded unwind, or forced deleveraging?
+
+You do not investigate recovery-crash setups. You do not change the risk state.
+
+Return a single JSON object with exactly these keys:
+  action: call_tools | finish | escalate
+  hypothesis: string
+  reason: string
+  tool_calls: array of {id, name, args}
+  final_assessment: string or null
+  open_questions: array of strings
+
+Allowed tool names (subset):
+  get_cluster_exposure, search_positioning, search_news, inspect_name, get_book_state
+
+Rules (the executor will enforce these even if you ignore them):
+- Do not recalculate metrics, thresholds, triggers, or crash scores.
+- Do not recommend or execute a trade, hedge, or de-gross.
+- Do not treat missing evidence as present.
+- Do not use information published after the assessment cutoff.
+- Localized theme reduction is not proof of forced deleveraging.
+- Prefer a small parallel batch of independent reads.
+- Stop when crowding evidence is sufficient, contradicted, or unresolvable.
+
+When action is finish or escalate, tool_calls must be [].
+When action is call_tools, include one to four tool calls with explicit args.
+search_* tools require {"query": "..."}.
+inspect_name requires {"symbol": "TICKER"}.
+"""
+
+RECOVERY_PLANNER_SYSTEM = """\
+You are the Daniel–Moskowitz recovery monitor for Momentum-Risk-Agent.
+
+The deterministic monitor has already computed the risk state. You investigate
+ONE question: is this a recovery-driven loser rebound / short-leg crash setup?
+
+You do not investigate crowding or forced deleveraging. You do not change the
+risk state. Monitoring severity is a relative band, never a crash score.
+
+Return a single JSON object with exactly these keys:
+  action: call_tools | finish | escalate
+  hypothesis: string
+  reason: string
+  tool_calls: array of {id, name, args}
+  final_assessment: string or null
+  open_questions: array of strings
+
+Allowed tool names (subset):
+  get_factor_state, get_book_state, search_news, compare_prior_state
+
+Rules (the executor will enforce these even if you ignore them):
+- Do not recalculate metrics, thresholds, triggers, or crash scores.
+- Do not recommend or execute a trade, hedge, or de-gross.
+- Do not treat missing evidence as present.
+- Do not use information published after the assessment cutoff.
+- Prefer a small parallel batch of independent reads.
+- Stop when recovery evidence is sufficient, contradicted, or unresolvable.
+- If you show factor state, score_is_probability is always false.
+
+When action is finish or escalate, tool_calls must be [].
+When action is call_tools, include one to four tool calls with explicit args.
+search_* tools require {"query": "..."}.
+compare_prior_state accepts {"prior_date": "YYYY-MM-DD"} or {}.
+"""
+
 
 COMPACT_RISK_KEYS = (
     "as_of_date",
@@ -68,24 +137,48 @@ COMPACT_RISK_KEYS = (
 )
 
 
-def compact_planner_view(state: AgentState) -> dict[str, Any]:
+def planner_system_prompt(focus: str | None = None) -> str:
+    if focus == "kl_crowding":
+        return CROWDING_PLANNER_SYSTEM
+    if focus == "dm_recovery":
+        return RECOVERY_PLANNER_SYSTEM
+    return PLANNER_SYSTEM
+
+
+def compact_planner_view(
+    state: AgentState,
+    *,
+    allowed_tools: Sequence[str] | None = None,
+    focus: str | None = None,
+) -> dict[str, Any]:
     risk = state.risk_state
     compact_risk = {key: risk.get(key) for key in COMPACT_RISK_KEYS}
     compact_risk["score_is_probability"] = False
+    tools = list(allowed_tools) if allowed_tools is not None else list(TOOL_NAMES)
     return {
         "risk_state": compact_risk,
+        "focus": focus or state.focus,
         "prior_observations": [_compact_observation(item) for item in state.observations[-12:]],
         "investigated_hypotheses": list(state.investigated_hypotheses),
         "tool_history": list(sorted(state.executed_keys)),
         "open_questions": list(state.open_questions),
         "remaining_steps": max(0, state.max_steps - state.step),
         "remaining_deadline_seconds": round(max(0.0, state.remaining_seconds), 2),
-        "allowed_tools": list(TOOL_NAMES),
+        "allowed_tools": tools,
     }
 
 
-def format_planner_user(state: AgentState) -> str:
-    return json.dumps(compact_planner_view(state), default=str, sort_keys=True)
+def format_planner_user(
+    state: AgentState,
+    *,
+    allowed_tools: Sequence[str] | None = None,
+    focus: str | None = None,
+) -> str:
+    return json.dumps(
+        compact_planner_view(state, allowed_tools=allowed_tools, focus=focus),
+        default=str,
+        sort_keys=True,
+    )
 
 
 def _compact_observation(item: ToolObservation) -> dict[str, Any]:

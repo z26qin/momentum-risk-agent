@@ -45,6 +45,7 @@ class AgentState:
     stop_reason: str | None = None
     consecutive_duplicate_steps: int = 0
     last_decision: AgentDecision | None = None
+    focus: str | None = None
 
     @property
     def risk_state(self) -> dict[str, Any]:

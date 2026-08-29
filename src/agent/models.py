@@ -132,5 +132,25 @@ class AgentRunTrace(BaseModel):
     calibrated: dict[str, Any] = Field(default_factory=dict)
 
 
+class OrchestratorTrace(BaseModel):
+    """Combined audit trail: routing decisions plus each specialist run."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    run_id: str
+    as_of_date: str
+    assessment_cutoff: str
+    planner_kind: str = "orchestrator"
+    spawned: list[str] = Field(default_factory=list)
+    routing: dict[str, Any] = Field(default_factory=dict)
+    decisions: list[dict[str, Any]] = Field(default_factory=list)
+    specialist_traces: dict[str, AgentRunTrace] = Field(default_factory=dict)
+    errors: list[str] = Field(default_factory=list)
+    stop_reason: str
+    final_assessment: str | None = None
+    calibrated: dict[str, Any] = Field(default_factory=dict)
+    report: str = ""
+
+
 class MalformedPlannerOutput(ValueError):
     """Planner returned text or JSON that is not a valid AgentDecision."""
