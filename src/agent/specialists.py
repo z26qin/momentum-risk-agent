@@ -25,6 +25,7 @@ class Specialist:
     name: str
     focus: str
     label: str
+    question: str
     signal: Signal
     registry: RegistryFactory
     addendum: str
@@ -36,6 +37,7 @@ SPECIALISTS: tuple[Specialist, ...] = (
         name="crowding",
         focus="kl_crowding",
         label="Crowding (Khandani–Lo)",
+        question="Localized crowded unwind, or forced deleveraging?",
         signal=crowding_signal_present,
         registry=crowding_registry,
         addendum=(
@@ -53,6 +55,7 @@ SPECIALISTS: tuple[Specialist, ...] = (
         name="recovery",
         focus="dm_recovery",
         label="Recovery (Daniel–Moskowitz)",
+        question="Recovery-driven loser rebound / short-leg crash setup?",
         signal=recovery_setup_present,
         registry=recovery_registry,
         addendum=(

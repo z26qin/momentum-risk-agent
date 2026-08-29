@@ -1,0 +1,375 @@
+[
+  {
+    "id": "semi",
+    "label": "Localized unwind",
+    "date": "2026-05-29",
+    "cutoff": "2026-05-29 16:00:00-04",
+    "horizon_days": 20,
+    "risk_state": {
+      "scorecard": [
+        {
+          "metric": "high_volatility_recovery",
+          "current_value": 0.0,
+          "threshold": 1.0,
+          "triggered": false,
+          "status": "available"
+        },
+        {
+          "metric": "short_minus_long_beta_gap",
+          "current_value": -2.067731776337184,
+          "threshold": 0.24897918694136156,
+          "triggered": false,
+          "status": "available"
+        },
+        {
+          "metric": "portfolio_drawdown",
+          "current_value": -0.07522682931760427,
+          "threshold": -0.17408140972421293,
+          "triggered": false,
+          "status": "available"
+        },
+        {
+          "metric": "short_loss_in_recovery",
+          "current_value": 0.15507930926767552,
+          "threshold": 0.25042021587620455,
+          "triggered": false,
+          "status": "available"
+        }
+      ],
+      "trigger_count": "0 / 4",
+      "mechanisms": {
+        "bear_market_recovery_crash": "watch",
+        "crowded_theme_unwind": "triggered",
+        "short_book_reversal_crash": "not_confirmed"
+      },
+      "theme_proxy": {
+        "cluster_symbols": [
+          "CIEN",
+          "COHR",
+          "LITE"
+        ],
+        "cluster_average_residual_correlation": 0.7256340152091921,
+        "cluster_residual_loss_5d": 0.07383149066395749,
+        "cluster_exposure_share": 0.30000000000000004,
+        "trigger": true
+      },
+      "unwind_state": "FRAGILITY_BUILDING",
+      "primary_driver": "crowded_unwind",
+      "score_is_probability": false
+    },
+    "trace": {
+      "run_id": "79e1dc68b931",
+      "quiet": false,
+      "spawned": [
+        "crowding"
+      ],
+      "schedule": "parallel_shared_deadline",
+      "deadline_seconds": 10.0,
+      "elapsed_seconds": 0.15,
+      "errors": [],
+      "specialists": [
+        {
+          "name": "crowding",
+          "label": "Crowding (Khandani–Lo)",
+          "question": "Localized crowded unwind, or forced deleveraging?",
+          "focus": "kl_crowding",
+          "allowed_tools": [
+            "get_cluster_exposure",
+            "search_positioning",
+            "search_news",
+            "inspect_name",
+            "get_book_state"
+          ],
+          "planner_kind": "heuristic-kl_crowding",
+          "decisions": [
+            {
+              "hypothesis": "localized crowded unwind",
+              "tool_calls": [
+                {
+                  "name": "get_cluster_exposure",
+                  "args": {}
+                },
+                {
+                  "name": "search_positioning",
+                  "args": {
+                    "query": "crowded hedge-fund positioning unwind deleveraging"
+                  }
+                },
+                {
+                  "name": "search_news",
+                  "args": {
+                    "query": "crowded hedge-fund positioning unwind deleveraging"
+                  }
+                }
+              ]
+            },
+            {
+              "hypothesis": "forced deleveraging still unconfirmed",
+              "tool_calls": [
+                {
+                  "name": "inspect_name",
+                  "args": {
+                    "symbol": "CIEN"
+                  }
+                }
+              ]
+            }
+          ],
+          "stop_reason": "EVIDENCE_SUFFICIENT",
+          "errors": [],
+          "elapsed_seconds": 0.15
+        }
+      ],
+      "combined_stop": "EVIDENCE_SUFFICIENT"
+    },
+    "note": {
+      "current_read": "Pressure is localized; available evidence does not establish a book-wide unwind or recovery crash.",
+      "observed": [
+        "0 / 4 deterministic signals triggered",
+        "mechanical unwind state: FRAGILITY_BUILDING",
+        "theme cluster: CIEN, COHR, LITE",
+        "structural flags: crowded_theme_unwind",
+        "cluster exposure: CIEN, COHR, LITE",
+        "search_positioning: [CSU-2026-007] 2026-05-05 Arista Networks Reports First Quarter 2026 Financial Results",
+        "search_news: [CSU-2026-007] 2026-05-05 Arista Networks Reports First Quarter 2026 Financial Results",
+        "CIEN in_cluster=True in_book=True leg=long"
+      ],
+      "inferred": [
+        "Localized crowding or technology exposure reduction",
+        "Working hypothesis: forced deleveraging still unconfirmed",
+        "Localized crowding pressure is supported. Forced deleveraging and a book-wide unwind remain unconfirmed."
+      ],
+      "against": [
+        "Liquidity is still absorbing; shorts are not being squeezed.",
+        "Public operating results do not show broad fundamental deterioration",
+        "Later rebuilding of technology exposure argues against an ongoing unwind"
+      ],
+      "not_confirmed": [
+        "Broad forced deleveraging",
+        "Completed Daniel–Moskowitz recovery crash"
+      ],
+      "citations": [
+        "[CSU-2026-007] 2026-05-05 Arista Networks Reports First Quarter 2026 Financial Results",
+        "[CSU-2026-013] 2026-05-04 Tech stocks see largest hedge fund selloff in decade: Goldman Sachs",
+        "[CSU-2026-014] 2026-05-26 Hedge Funds Pile Back Into AI and Tech Stocks",
+        "[E1] 2026-05-13 Citadel Quant Chief : AI New Market Paradox Faster Information , More Crowded Trades :"
+      ],
+      "what_changed": "No prior-date comparison was loaded for this investigation.",
+      "next_useful_check": "Is there evidence of broad deleveraging?",
+      "score_is_probability": false
+    }
+  },
+  {
+    "id": "march2020",
+    "label": "Recovery crash ref",
+    "date": "2020-03-24",
+    "cutoff": "2020-03-24 16:00:00-04",
+    "horizon_days": 20,
+    "risk_state": {
+      "scorecard": [
+        {
+          "metric": "high_volatility_recovery",
+          "current_value": 1.0,
+          "threshold": 1.0,
+          "triggered": true,
+          "status": "available"
+        },
+        {
+          "metric": "short_minus_long_beta_gap",
+          "current_value": 0.05541899349973911,
+          "threshold": 0.0,
+          "triggered": true,
+          "status": "available"
+        },
+        {
+          "metric": "portfolio_drawdown",
+          "current_value": -0.04819865862548389,
+          "threshold": -0.1445314333859717,
+          "triggered": false,
+          "status": "available"
+        },
+        {
+          "metric": "short_loss_in_recovery",
+          "current_value": 0.40287442357217884,
+          "threshold": 0.15370220083518035,
+          "triggered": true,
+          "status": "available"
+        }
+      ],
+      "trigger_count": "3 / 4",
+      "mechanisms": {
+        "bear_market_recovery_crash": "triggered",
+        "short_book_reversal_crash": "watch",
+        "crowded_theme_unwind": "not_confirmed"
+      },
+      "theme_proxy": null,
+      "unwind_state": "FRAGILITY_BUILDING",
+      "primary_driver": "dm_recovery",
+      "score_is_probability": false
+    },
+    "trace": {
+      "run_id": "77717646d526",
+      "quiet": false,
+      "spawned": [
+        "recovery"
+      ],
+      "schedule": "parallel_shared_deadline",
+      "deadline_seconds": 10.0,
+      "elapsed_seconds": 0.01,
+      "errors": [],
+      "specialists": [
+        {
+          "name": "recovery",
+          "label": "Recovery (Daniel–Moskowitz)",
+          "question": "Recovery-driven loser rebound / short-leg crash setup?",
+          "focus": "dm_recovery",
+          "allowed_tools": [
+            "get_factor_state",
+            "get_book_state",
+            "search_news",
+            "compare_prior_state"
+          ],
+          "planner_kind": "heuristic-dm_recovery",
+          "decisions": [
+            {
+              "hypothesis": "recovery-driven reversal",
+              "tool_calls": [
+                {
+                  "name": "get_factor_state",
+                  "args": {}
+                },
+                {
+                  "name": "search_news",
+                  "args": {
+                    "query": "market recovery loser rebound short-leg pain volatility"
+                  }
+                }
+              ]
+            },
+            {
+              "hypothesis": "recovery-driven reversal",
+              "tool_calls": [
+                {
+                  "name": "compare_prior_state",
+                  "args": {}
+                }
+              ]
+            }
+          ],
+          "stop_reason": "EVIDENCE_SUFFICIENT",
+          "errors": [],
+          "elapsed_seconds": 0.01
+        }
+      ],
+      "combined_stop": "EVIDENCE_SUFFICIENT"
+    },
+    "note": {
+      "current_read": "Pressure is localized; available evidence does not establish a book-wide unwind or recovery crash.",
+      "observed": [
+        "3 / 4 deterministic signals triggered",
+        "mechanical unwind state: FRAGILITY_BUILDING",
+        "structural flags: bear_market_recovery_crash",
+        "factor/regime: panic_elevated; score_is_probability=False",
+        "search_news: [M20-2020-001] 2020-03-15 Federal Reserve Actions to Support the Flow of Credit to Households and Businesses"
+      ],
+      "inferred": [
+        "Working hypothesis: recovery-driven reversal",
+        "Recovery conditions were investigated. This remains an interpretation of the deterministic state, not a crash call."
+      ],
+      "against": [
+        "None"
+      ],
+      "not_confirmed": [
+        "DM-style loser rebound"
+      ],
+      "citations": [
+        "[M20-2020-001] 2020-03-15 Federal Reserve Actions to Support the Flow of Credit to Households and Businesses",
+        "[M20-2020-003] 2020-03-17 Federal Reserve Board announces establishment of a Primary Dealer Credit Facility (PDCF) to support the credit needs of households and businesses",
+        "[M20-2020-005] 2020-03-23 Federal Reserve announces extensive new measures to support the economy"
+      ],
+      "what_changed": "No prior compact assessment was loaded for this run. The agent does not launch a second monitor computation.",
+      "next_useful_check": "Are losers rebounding vs winners?",
+      "score_is_probability": false
+    }
+  },
+  {
+    "id": "quiet2024",
+    "label": "Quiet control",
+    "date": "2024-01-05",
+    "cutoff": "2024-01-05 16:00:00-05",
+    "horizon_days": 20,
+    "risk_state": {
+      "scorecard": [
+        {
+          "metric": "high_volatility_recovery",
+          "current_value": 0.0,
+          "threshold": 1.0,
+          "triggered": false,
+          "status": "available"
+        },
+        {
+          "metric": "short_minus_long_beta_gap",
+          "current_value": -0.5179249937441994,
+          "threshold": 0.711609768322202,
+          "triggered": false,
+          "status": "available"
+        },
+        {
+          "metric": "portfolio_drawdown",
+          "current_value": -0.0902711157867091,
+          "threshold": -0.2,
+          "triggered": false,
+          "status": "available"
+        },
+        {
+          "metric": "short_loss_in_recovery",
+          "current_value": 0.2038585894990823,
+          "threshold": 0.29052131059638037,
+          "triggered": false,
+          "status": "available"
+        }
+      ],
+      "trigger_count": "0 / 4",
+      "mechanisms": {
+        "bear_market_recovery_crash": "watch",
+        "short_book_reversal_crash": "not_confirmed",
+        "crowded_theme_unwind": "not_confirmed"
+      },
+      "theme_proxy": null,
+      "unwind_state": "NORMAL",
+      "primary_driver": "crowded_unwind",
+      "score_is_probability": false
+    },
+    "trace": {
+      "run_id": "eb3fc00c6ddf",
+      "quiet": true,
+      "spawned": [],
+      "schedule": "parallel_shared_deadline",
+      "deadline_seconds": 10.0,
+      "elapsed_seconds": 0.0,
+      "errors": [],
+      "specialists": [],
+      "combined_stop": "NO_INVESTIGATION_NEEDED"
+    },
+    "note": {
+      "current_read": "The deterministic state does not justify additional evidence search. Continue ordinary monitoring.",
+      "observed": [
+        "0 / 4 deterministic signals triggered",
+        "mechanical unwind state: NORMAL"
+      ],
+      "inferred": [
+        "No additional inference beyond the deterministic snapshot."
+      ],
+      "against": [
+        "None"
+      ],
+      "not_confirmed": [
+        "None"
+      ],
+      "citations": [],
+      "what_changed": "No prior-date comparison was loaded for this investigation.",
+      "next_useful_check": "Continue ordinary monitoring.",
+      "score_is_probability": false
+    }
+  }
+]
