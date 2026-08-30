@@ -45,6 +45,8 @@ _MAX_DOCS = 8
 
 def search_news(ctx: ToolContext, args: BaseModel) -> dict[str, Any]:
     query = str(getattr(args, "query", "")).strip()
+    if ctx.case is not None:
+        return _search_case(ctx, query, channel="news")
     local = _filter_pack(ctx.as_of_date, query)
     remote = _safe_list(
         gdelt_search_news, query, ctx.assessment_cutoff, as_of_date=ctx.as_of_date
@@ -62,6 +64,8 @@ def search_news(ctx: ToolContext, args: BaseModel) -> dict[str, Any]:
 
 def search_positioning(ctx: ToolContext, args: BaseModel) -> dict[str, Any]:
     query = str(getattr(args, "query", "")).strip()
+    if ctx.case is not None:
+        return _search_case(ctx, query, channel="positioning")
     local = [
         item
         for item in _filter_pack(ctx.as_of_date, query)
@@ -170,3 +174,22 @@ def _safe_list(func, query: str, cutoff: str, *, as_of_date: str) -> list[dict[s
 
 
 MappingLike = dict[str, Any]
+
+
+def _search_case(ctx: ToolContext, query: str, *, channel: str) -> dict[str, Any]:
+    documents = []
+    for item in ctx.case.evidence if ctx.case is not None else ():
+        if channel not in item.channels:
+            continue
+        blob = f"{item.headline} {item.snippet} {item.source}"
+        if not _hits(query, blob):
+            continue
+        documents.append(item.model_dump(mode="json"))
+    return {
+        "documents": documents[:_MAX_DOCS],
+        "source": "frozen_case",
+        "limitation": (
+            "Search is limited to cutoff-dated frozen case evidence; "
+            "missing evidence remains missing."
+        ),
+    }

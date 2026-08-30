@@ -165,6 +165,44 @@ def default_registry() -> ToolRegistry:
     )
 
 
+def case_registry() -> ToolRegistry:
+    from src.tools import evidence, state
+
+    return ToolRegistry(
+        [
+            ToolSpec("get_book_state", EmptyArgs, state.get_book_state, timeout_seconds=2.0),
+            ToolSpec("get_factor_state", EmptyArgs, state.get_factor_state, timeout_seconds=2.0),
+            ToolSpec(
+                "get_cluster_exposure",
+                EmptyArgs,
+                state.get_cluster_exposure,
+                timeout_seconds=2.0,
+            ),
+            ToolSpec(
+                "compare_prior_state",
+                CompareArgs,
+                state.compare_prior_state,
+                timeout_seconds=2.0,
+            ),
+            ToolSpec(
+                "search_news",
+                SearchArgs,
+                evidence.search_news,
+                timeout_seconds=TOOL_TIMEOUT_SECONDS,
+                returns_evidence=True,
+            ),
+            ToolSpec(
+                "search_positioning",
+                SearchArgs,
+                evidence.search_positioning,
+                timeout_seconds=TOOL_TIMEOUT_SECONDS,
+                returns_evidence=True,
+            ),
+            ToolSpec("inspect_name", InspectArgs, state.inspect_name, timeout_seconds=2.0),
+        ]
+    )
+
+
 def crowding_registry(base: ToolRegistry | None = None) -> ToolRegistry:
     """Khandani–Lo crowding monitor: cluster, positioning, news, name, book."""
 
