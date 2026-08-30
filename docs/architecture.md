@@ -23,12 +23,26 @@ and invalid arguments, deduplicates equivalent reads, caps parallel calls,
 isolates exceptions and timeouts, enforces the overall deadline, and removes
 post-cutoff evidence.
 
+Only handler exceptions and per-tool timeouts are transient: the executor may
+retry either once if the same overall deadline has budget. Pre-execution
+rejections and cutoff filtering are never retried. `ToolObservation.attempts`
+keeps that behavior visible without changing the tool payload.
+
+An LLM planner may transition once to its focus-matched heuristic planner after
+a transport timeout or malformed structured decision. The failed LLM call uses
+wall-clock budget but not a loop step. Scripted and heuristic planner failures
+remain fail-closed, and an empty explicit LLM configuration is rejected by the
+CLI before the agent starts.
+
 Tools project the frozen case or search its bundled evidence. Missing evidence,
 holdings, and prior states remain explicitly missing.
 
 ## Synthesis
 
-Synthesis renders observed, inferred, against, and not-confirmed buckets. It
+Synthesis renders observed, inferred, against, not-confirmed, and citation
+buckets. Citations are derived only from cutoff-valid evidence already ingested
+into the agent state, formatted as `[evidence_id] YYYY-MM-DD headline`, and
+deduplicated across specialists. It
 does not average specialist findings or turn relative severity into a crash
 probability. Trade language and probability claims are removed in code before
 the PM note or trace is returned.
