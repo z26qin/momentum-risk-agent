@@ -238,6 +238,64 @@ def test_one_parallel_tool_failing_does_not_kill_run() -> None:
     by_name = {item.name: item for item in result.observations}
     assert by_name["get_cluster_exposure"].status == "ok"
     assert by_name["get_book_state"].status == "error"
+
+
+def test_given_transient_handler_error_when_budget_remains_then_tool_retries_once() -> None:
+    calls = {"count": 0}
+
+    def flaky(_ctx, _args):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise RuntimeError("transient")
+        return {"ok": True}
+
+    result = run_agent(
+        _crowding_case(),
+        planner=ScriptedPlanner([_decision("get_book_state"), _finish()]),
+        registry=_registry({"get_book_state": flaky}),
+    )
+
+    assert calls["count"] == 2
+    assert result.observations[0].status == "ok"
+    assert result.observations[0].attempts == 2
+
+
+def test_given_transient_timeout_when_budget_remains_then_tool_retries_once() -> None:
+    calls = {"count": 0}
+
+    def flaky(_ctx, _args):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            time.sleep(0.05)
+        return {"ok": True}
+
+    result = run_agent(
+        _crowding_case(),
+        planner=ScriptedPlanner([_decision("get_book_state"), _finish()]),
+        registry=_registry({"get_book_state": flaky}, timeouts={"get_book_state": 0.01}),
+    )
+
+    assert calls["count"] == 2
+    assert result.observations[0].status == "ok"
+    assert result.observations[0].attempts == 2
+
+
+def test_given_two_handler_failures_when_executed_then_final_error_is_isolated() -> None:
+    calls = {"count": 0}
+
+    def broken(_ctx, _args):
+        calls["count"] += 1
+        raise RuntimeError("still down")
+
+    result = run_agent(
+        _crowding_case(),
+        planner=ScriptedPlanner([_decision("get_book_state"), _finish()]),
+        registry=_registry({"get_book_state": broken}),
+    )
+
+    assert calls["count"] == 2
+    assert result.observations[0].status == "error"
+    assert result.observations[0].attempts == 2
     assert result.stop_reason == "EVIDENCE_SUFFICIENT"
     assert "Observed:" in result.report
 

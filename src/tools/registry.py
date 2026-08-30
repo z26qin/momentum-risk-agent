@@ -15,6 +15,7 @@ from src.tools.context import ToolContext
 
 TOOL_TIMEOUT_SECONDS = 4.0
 MAX_PARALLEL_TOOLS = 4
+TOOL_RETRIES = 1
 
 
 class EmptyArgs(BaseModel):
