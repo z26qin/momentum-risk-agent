@@ -1,0 +1,121 @@
+{
+  "schema_version": "investigation-case-v1",
+  "provenance": {
+    "source_repository": "momentum-tail-risk-monitor",
+    "source_commit": "9ff0aff12f00bc158af55e11656360a928590588",
+    "run_fingerprint": "34afaf20f8a43cc3"
+  },
+  "risk_state": {
+    "schema_version": "risk-state-v1",
+    "as_of_date": "2020-03-24",
+    "assessment_cutoff": "2020-03-24T16:00:00-04:00",
+    "comparison_date": "2020-02-28",
+    "market_regime": "panic_elevated",
+    "mechanical_unwind_state": "FRAGILITY_BUILDING",
+    "total_signal_count": 4,
+    "triggered_signals": ["high_volatility_recovery", "short_minus_long_beta_gap", "short_loss_in_recovery"],
+    "structural_flags": ["portfolio_concentration"],
+    "mechanisms": {
+      "bear_market_recovery_crash": "triggered",
+      "crowded_theme_unwind": "not_confirmed",
+      "short_book_reversal_crash": "watch"
+    },
+    "book": {
+      "portfolio_drawdown": -0.04819865862548389,
+      "short_loss_in_recovery": 0.40287442357217884,
+      "long_beta_126d": 1.2377174550836794,
+      "short_underlying_beta_126d": 1.2931364485834185
+    },
+    "theme_cluster": [],
+    "severity": {
+      "score": 100,
+      "label": "high",
+      "primary_driver": "dm_recovery",
+      "mechanism_scores": {
+        "book_vulnerability": 100,
+        "crowded_unwind": 95,
+        "dm_recovery": 100,
+        "fundamental_repricing": null
+      },
+      "score_is_probability": false
+    }
+  },
+  "prior_state": {
+    "schema_version": "risk-state-v1",
+    "as_of_date": "2020-02-28",
+    "assessment_cutoff": "2020-02-28T16:00:00-05:00",
+    "comparison_date": null,
+    "market_regime": "normal",
+    "mechanical_unwind_state": "NORMAL",
+    "total_signal_count": 4,
+    "triggered_signals": [],
+    "structural_flags": [],
+    "mechanisms": {
+      "bear_market_recovery_crash": "watch",
+      "crowded_theme_unwind": "not_confirmed",
+      "short_book_reversal_crash": "not_confirmed"
+    },
+    "book": {
+      "portfolio_drawdown": -0.03715140589897137,
+      "short_loss_in_recovery": 0.10115809237715018,
+      "long_beta_126d": 1.2090880689415637,
+      "short_underlying_beta_126d": 1.1627667086066704
+    },
+    "theme_cluster": [],
+    "severity": {
+      "score": 100,
+      "label": "high",
+      "primary_driver": "crowded_unwind",
+      "mechanism_scores": {
+        "book_vulnerability": 78,
+        "crowded_unwind": 100,
+        "dm_recovery": 90,
+        "fundamental_repricing": null
+      },
+      "score_is_probability": false
+    }
+  },
+  "evidence": [
+    {
+      "evidence_id": "M20-2020-001",
+      "published_at": "2020-03-15T17:00:00-04:00",
+      "source": "Federal Reserve Board",
+      "headline": "Federal Reserve Actions to Support the Flow of Credit to Households and Businesses",
+      "snippet": "The Federal Reserve said it was monitoring credit markets and would use its full range of tools to support credit flows.",
+      "channels": ["news"],
+      "symbols": [],
+      "stance": "supporting"
+    },
+    {
+      "evidence_id": "M20-2020-002",
+      "published_at": "2020-03-15T17:00:00-04:00",
+      "source": "Federal Reserve Board",
+      "headline": "Coordinated Central Bank Action to Enhance U.S. Dollar Liquidity",
+      "snippet": "Six central banks announced coordinated action to enhance dollar liquidity through standing swap lines.",
+      "channels": ["news"],
+      "symbols": [],
+      "stance": "contextual"
+    },
+    {
+      "evidence_id": "M20-2020-003",
+      "published_at": "2020-03-17T18:00:00-04:00",
+      "source": "Federal Reserve Board",
+      "headline": "Federal Reserve establishes a Primary Dealer Credit Facility",
+      "snippet": "The facility was established to support smooth market functioning and credit availability.",
+      "channels": ["news"],
+      "symbols": [],
+      "stance": "contextual"
+    },
+    {
+      "evidence_id": "M20-2020-005",
+      "published_at": "2020-03-23T08:00:00-04:00",
+      "source": "Federal Reserve Board",
+      "headline": "Federal Reserve announces extensive new measures to support the economy",
+      "snippet": "The Federal Reserve announced aggressive support measures intended to limit losses and promote a swift recovery after severe disruption.",
+      "channels": ["news"],
+      "symbols": [],
+      "stance": "supporting"
+    }
+  ],
+  "holdings": []
+}

@@ -1,0 +1,145 @@
+{
+  "schema_version": "investigation-case-v1",
+  "provenance": {
+    "source_repository": "momentum-tail-risk-monitor",
+    "source_commit": "9ff0aff12f00bc158af55e11656360a928590588",
+    "run_fingerprint": "9e7a705de352d184"
+  },
+  "risk_state": {
+    "schema_version": "risk-state-v1",
+    "as_of_date": "2026-05-29",
+    "assessment_cutoff": "2026-05-29T16:00:00-04:00",
+    "comparison_date": "2026-04-30",
+    "market_regime": "normal",
+    "mechanical_unwind_state": "FRAGILITY_BUILDING",
+    "total_signal_count": 4,
+    "triggered_signals": [],
+    "structural_flags": ["portfolio_concentration"],
+    "mechanisms": {
+      "bear_market_recovery_crash": "watch",
+      "crowded_theme_unwind": "triggered",
+      "short_book_reversal_crash": "not_confirmed"
+    },
+    "book": {
+      "portfolio_drawdown": -0.07522682931760427,
+      "short_loss_in_recovery": 0.15507930926767552,
+      "long_beta_126d": 2.572822625616927,
+      "short_underlying_beta_126d": 0.5050908492797432
+    },
+    "theme_cluster": ["CIEN", "COHR", "LITE"],
+    "severity": {
+      "score": 96,
+      "label": "high",
+      "primary_driver": "crowded_unwind",
+      "mechanism_scores": {
+        "book_vulnerability": 56,
+        "crowded_unwind": 96,
+        "dm_recovery": 45,
+        "fundamental_repricing": null
+      },
+      "score_is_probability": false
+    }
+  },
+  "prior_state": {
+    "schema_version": "risk-state-v1",
+    "as_of_date": "2026-04-30",
+    "assessment_cutoff": "2026-04-30T16:00:00-04:00",
+    "comparison_date": null,
+    "market_regime": "normal",
+    "mechanical_unwind_state": "FRAGILITY_BUILDING",
+    "total_signal_count": 4,
+    "triggered_signals": [],
+    "structural_flags": ["portfolio_concentration"],
+    "mechanisms": {
+      "bear_market_recovery_crash": "watch",
+      "crowded_theme_unwind": "watch",
+      "short_book_reversal_crash": "not_confirmed"
+    },
+    "book": {
+      "portfolio_drawdown": 0.0,
+      "short_loss_in_recovery": 0.1504891584910401,
+      "long_beta_126d": 2.643493479150049,
+      "short_underlying_beta_126d": 0.7483865559279789
+    },
+    "theme_cluster": ["MU", "STX", "WDC"],
+    "severity": {
+      "score": 97,
+      "label": "high",
+      "primary_driver": "crowded_unwind",
+      "mechanism_scores": {
+        "book_vulnerability": 54,
+        "crowded_unwind": 97,
+        "dm_recovery": 56,
+        "fundamental_repricing": null
+      },
+      "score_is_probability": false
+    }
+  },
+  "evidence": [
+    {
+      "evidence_id": "CSU-2026-007",
+      "published_at": "2026-05-05T00:00:00-04:00",
+      "source": "Arista Networks Investor Relations",
+      "headline": "Arista Networks Reports First Quarter 2026 Financial Results",
+      "snippet": "Arista reported first-quarter revenue of $2.709 billion, up 35.1% year over year, and described continued positioning in AI and data-center networking.",
+      "channels": ["news"],
+      "symbols": [],
+      "stance": "contradicting"
+    },
+    {
+      "evidence_id": "CSU-2026-008",
+      "published_at": "2026-05-06T00:00:00-04:00",
+      "source": "Coherent Investor Relations",
+      "headline": "Coherent Reports Third Quarter Fiscal 2026 Results",
+      "snippet": "Coherent reported 21% year-over-year revenue growth and said exceptionally strong datacenter and communications demand was driving capacity expansion.",
+      "channels": ["news"],
+      "symbols": ["COHR"],
+      "stance": "contradicting"
+    },
+    {
+      "evidence_id": "CSU-2026-009",
+      "published_at": "2026-05-05T00:00:00-04:00",
+      "source": "Lumentum Investor Relations",
+      "headline": "Lumentum Announces Third Quarter Fiscal 2026 Financial Results",
+      "snippet": "Lumentum reported record revenue of $808.4 million, up 90% year over year, with strength in laser chips and scale-across optical components.",
+      "channels": ["news"],
+      "symbols": ["LITE"],
+      "stance": "contradicting"
+    },
+    {
+      "evidence_id": "CSU-2026-013",
+      "published_at": "2026-05-04T00:00:00-04:00",
+      "source": "Investing.com reporting Goldman Sachs Prime Book data",
+      "headline": "Tech stocks see largest hedge fund selloff in decade: Goldman Sachs",
+      "snippet": "The report said hedge funds made their largest decade-scale technology reduction, led by long sales; semiconductors and equipment were among the heaviest-sold groups.",
+      "channels": ["news", "positioning"],
+      "symbols": [],
+      "stance": "supporting"
+    },
+    {
+      "evidence_id": "CSU-2026-014",
+      "published_at": "2026-05-26T00:00:00-04:00",
+      "source": "HedgeCo Insights reporting Goldman Sachs Prime Brokerage data",
+      "headline": "Hedge Funds Pile Back Into AI and Tech Stocks",
+      "snippet": "The report said hedge funds rebuilt technology exposure rapidly, with global IT positions near record highs and buying focused on AI-linked semiconductor and infrastructure names.",
+      "channels": ["news", "positioning"],
+      "symbols": [],
+      "stance": "contextual"
+    },
+    {
+      "evidence_id": "CSU-2026-015",
+      "published_at": "2026-05-25T00:00:00-04:00",
+      "source": "RBC Global Asset Management",
+      "headline": "MacroMemo — May 5–25, 2026",
+      "snippet": "RBC described a broad recovery from the March selloff and explosive semiconductor gains, while warning that SOX valuations and technical measures were historically stretched.",
+      "channels": ["news"],
+      "symbols": [],
+      "stance": "contextual"
+    }
+  ],
+  "holdings": [
+    {"symbol": "CIEN", "leg": "long", "weight": 0.1, "effective_month": "2026-05-01", "formation_date": "2026-04-30"},
+    {"symbol": "COHR", "leg": "long", "weight": 0.1, "effective_month": "2026-05-01", "formation_date": "2026-04-30"},
+    {"symbol": "LITE", "leg": "long", "weight": 0.1, "effective_month": "2026-05-01", "formation_date": "2026-04-30"}
+  ]
+}
