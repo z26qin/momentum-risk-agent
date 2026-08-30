@@ -12,7 +12,7 @@ from src.agent.state import AgentState
 PLANNER_SYSTEM = f"""\
 You are the investigation planner for Momentum-Risk-Agent.
 
-The deterministic monitor has already computed the risk state. You investigate
+The deterministic provider has already supplied the risk state. You investigate
 that state. You do not change it.
 
 Return a single JSON object with exactly these keys:

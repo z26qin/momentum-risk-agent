@@ -1,7 +1,7 @@
 """Mechanism specialists: routing, tools, prompt addendum, finish copy.
 
 One table owns the names the rest of the agent refers to. Adding a monitor
-means adding a row here, not copying orchestrator/report/planner branches.
+means adding a row here, not copying orchestrator/synthesis/planner branches.
 """
 
 from __future__ import annotations
