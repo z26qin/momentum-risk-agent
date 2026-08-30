@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import time
 
+import pytest
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.agent.loop import run_agent
 from src.agent.models import AgentDecision, ToolCall
-from src.agent.planner import ScriptedPlanner
+from src.agent.planner import LLMPlanner, ScriptedPlanner
 from src.agent.synthesis import sanitize_text
 from src.risk_state.provider import FrozenCaseProvider
 from src.tools.registry import EmptyArgs, SearchArgs, ToolRegistry, ToolSpec
@@ -296,6 +297,33 @@ def test_given_two_handler_failures_when_executed_then_final_error_is_isolated()
     assert calls["count"] == 2
     assert result.observations[0].status == "error"
     assert result.observations[0].attempts == 2
+
+
+@pytest.mark.parametrize("failure", ["malformed", "timeout"])
+def test_given_runtime_llm_failure_when_budget_remains_then_specialist_falls_back_once(
+    failure: str,
+) -> None:
+    def transport(**kwargs):
+        del kwargs
+        if failure == "timeout":
+            raise TimeoutError("provider unavailable")
+        return "not-json"
+
+    result = run_agent(
+        _crowding_case(),
+        planner=LLMPlanner(
+            api_key="test",
+            transport=transport,
+            focus="kl_crowding",
+        ),
+        focus="kl_crowding",
+    )
+
+    assert result.stop_reason == "EVIDENCE_SUFFICIENT"
+    assert result.planner_kind == "llm-kl_crowding->heuristic-kl_crowding"
+    assert result.trace.planner_kind == result.planner_kind
+    assert sum("falling back to heuristic" in item for item in result.state.errors) == 1
+    assert result.state.step == 3
     assert result.stop_reason == "EVIDENCE_SUFFICIENT"
     assert "Observed:" in result.report
 
