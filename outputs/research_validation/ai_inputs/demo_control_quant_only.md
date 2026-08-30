@@ -1,9 +1,0 @@
-# Quant-only facts — demo_control
-
-- as_of_date: 2024-01-05
-- overall_risk_state: bear_low_volatility
-- triggered_signals: none
-- mechanisms: {"bear_market_recovery_crash": "watch", "crowded_theme_unwind": "not_confirmed", "short_book_reversal_crash": "not_confirmed"}
-- evidence_quality: available
-- evidence_count: 7
-- warnings: The cached corpus is small and may omit relevant contradictory evidence.; Generic macro context does not establish momentum-specific causality.; Evidence cannot change deterministic metrics, thresholds, triggered states, or create a risk score.; No composite deterministic score is defined; the adapter preserves the four indicator states and leaves deterministic_score null.; The legacy Phase 6 adapter contract contains Phase 5A feasibility metadata only and does not embed the separate Phase 5 unwind scorecard; the notebook renders that deterministic assessment alongside this card. Its fundamental row remains unavailable unless exact-date company coverage is supplied.; Sector-adjusted residual return is unavailable; only lagged-beta adjustment is implemented.; Security history uses current-membership and current-classification proxies and is survivorship-biased.; Liquidity fields are public volume and Amihud proxies, not direct evidence of leverage or forced selling.; No exact-date Phase 5A company coverage was supplied.; The cluster is a return-correlation proxy, not observed common ownership.; Security membership and sector labels are current-snapshot proxies.; Industry classification is unavailable in the existing repository data.; No all-pairs correlated cluster met the pre-event proxy gates.; No composite probability is calculated from the six rows.; scenario_classification is a lossy v1 compatibility view; use mechanism_scenarios for the v2 result.
