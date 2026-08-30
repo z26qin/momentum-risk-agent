@@ -1,35 +1,27 @@
-"""Code-first orchestrator over mechanism-specialist monitors.
-
-Independent specialists overlap on a shared wall-clock deadline via
-``asyncio.wait`` + ``asyncio.to_thread(run_agent)``. They do not talk to
-each other. Findings are never merged into a crash score.
-"""
+"""Code-first routing over independent mechanism specialists."""
 
 from __future__ import annotations
 
 import asyncio
-import copy
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Any, Callable, Mapping
+from typing import Callable, Mapping
 
 from src.agent.loop import (
     MAX_STEPS,
     OVERALL_DEADLINE_SECONDS,
     AgentRunResult,
-    prepare_risk_snapshot,
     run_agent,
 )
 from src.agent.models import OrchestratorTrace, ToolObservation
 from src.agent.planner import Planner
-from src.agent.report import build_combined_pm_note, sanitize_text
+from src.agent.signals import no_meaningful_risk_signal
 from src.agent.specialists import BY_NAME, SCHEDULE, select_specialists
-from src.agent_prompts import no_meaningful_risk_signal
-from src.mvp.config import HISTORICAL_EXAMPLE_DATE
+from src.agent.synthesis import build_combined_pm_note, sanitize_text
+from src.risk_state.models import InvestigationCase, RiskState
 from src.tools.registry import ToolRegistry
-from src.utils.io import DEFAULT_PROCESSED_DIR
 
 Monotonic = Callable[[], float]
 
@@ -41,27 +33,22 @@ class OrchestratedRunResult:
     stop_reason: str
     report: str
     trace: OrchestratorTrace
-    risk_state: dict[str, Any]
+    risk_state: RiskState
     spawned: tuple[str, ...]
     specialist_results: dict[str, AgentRunResult]
     observations: tuple[ToolObservation, ...]
-    routing: dict[str, Any]
+    routing: dict
 
 
 @dataclass(frozen=True)
 class _Job:
-    """Shared inputs for every specialist on this investigation."""
-
-    as_of_date: str
+    case: InvestigationCase
     max_steps: int
     deadline: float
-    risk_state: Mapping[str, Any]
-    prior_state: Mapping[str, Any] | None
     planners: Mapping[str, Planner]
     registries: Mapping[str, ToolRegistry]
     use_llm: bool | None
     monotonic: Monotonic
-    processed_dir: Any
     run_id: str
 
 
@@ -74,32 +61,26 @@ def _run_sync(factory):
         return pool.submit(lambda: asyncio.run(factory())).result()
 
 
-def run_orchestrated_investigation(*args, **kwargs) -> OrchestratedRunResult:
-    """Sync CLI/test entry around ``run_orchestrated_investigation_async``."""
-
-    return _run_sync(lambda: run_orchestrated_investigation_async(*args, **kwargs))
+def run_orchestrated_investigation(
+    case: InvestigationCase, **kwargs
+) -> OrchestratedRunResult:
+    return _run_sync(lambda: run_orchestrated_investigation_async(case, **kwargs))
 
 
 async def run_orchestrated_investigation_async(
-    as_of_date: str = HISTORICAL_EXAMPLE_DATE,
+    case: InvestigationCase,
     max_steps: int = MAX_STEPS,
     *,
     overall_deadline_seconds: float = OVERALL_DEADLINE_SECONDS,
-    risk_state: Mapping[str, Any] | None = None,
-    prior_state: Mapping[str, Any] | None = None,
-    mvp_result: Any | None = None,
     planners: Mapping[str, Planner] | None = None,
     registries: Mapping[str, ToolRegistry] | None = None,
     use_llm: bool | None = None,
     monotonic: Monotonic = time.monotonic,
-    processed_dir=DEFAULT_PROCESSED_DIR,
 ) -> OrchestratedRunResult:
-    frozen, _, date, cutoff = prepare_risk_snapshot(
-        as_of_date, risk_state=risk_state, mvp_result=mvp_result
-    )
+    risk = case.risk_state
     run_id = uuid.uuid4().hex[:12]
-    spawned = select_specialists(frozen)
-    quiet = no_meaningful_risk_signal(frozen)
+    spawned = select_specialists(risk)
+    quiet = no_meaningful_risk_signal(risk)
     deadline = float(overall_deadline_seconds)
     routing = {
         "quiet": quiet,
@@ -108,36 +89,33 @@ async def run_orchestrated_investigation_async(
         "deadline_seconds": deadline,
     }
     job = _Job(
-        as_of_date=date,
+        case=case,
         max_steps=max_steps,
         deadline=deadline,
-        risk_state=frozen,
-        prior_state=prior_state,
         planners=planners or {},
         registries=registries or {},
         use_llm=use_llm,
         monotonic=monotonic,
-        processed_dir=processed_dir,
         run_id=run_id,
     )
-    specialist_results, spawn_decisions = await _gather(spawned, job)
+    specialist_results, decisions = await _gather(spawned, job)
     stop_reason = _combined_stop(spawned, specialist_results, quiet)
     report, calibrated = build_combined_pm_note(
-        risk_state=frozen,
+        risk_state=risk,
         spawned=spawned,
         specialist_results=specialist_results,
         stop_reason=stop_reason,
     )
     observations = tuple(
-        item
+        observation
         for name in spawned
         if name in specialist_results
-        for item in specialist_results[name].observations
+        for observation in specialist_results[name].observations
     )
     trace = OrchestratorTrace(
         run_id=run_id,
-        as_of_date=date,
-        assessment_cutoff=cutoff,
+        as_of_date=risk.as_of_date.isoformat(),
+        assessment_cutoff=risk.assessment_cutoff.isoformat(),
         spawned=list(spawned),
         routing=routing,
         decisions=[
@@ -145,18 +123,13 @@ async def run_orchestrated_investigation_async(
                 "actor": "orchestrator",
                 "action": "spawn" if spawned else "skip",
                 "specialists": list(spawned),
-                "reason": "NO_INVESTIGATION_NEEDED" if quiet else "deterministic_flags",
+                "reason": "NO_INVESTIGATION_NEEDED" if quiet else "deterministic_mechanisms",
                 "schedule": SCHEDULE,
             },
-            *spawn_decisions,
+            *decisions,
         ],
-        specialist_traces={name: specialist_results[name].trace for name in specialist_results},
-        errors=[
-            error
-            for name in spawned
-            if name in specialist_results
-            for error in specialist_results[name].state.errors
-        ],
+        specialist_traces={name: result.trace for name, result in specialist_results.items()},
+        errors=[error for result in specialist_results.values() for error in result.state.errors],
         stop_reason=stop_reason,
         final_assessment=sanitize_text(calibrated.get("current_read")),
         calibrated=calibrated,
@@ -164,11 +137,11 @@ async def run_orchestrated_investigation_async(
     )
     return OrchestratedRunResult(
         run_id=run_id,
-        as_of_date=date,
+        as_of_date=risk.as_of_date.isoformat(),
         stop_reason=stop_reason,
         report=report,
         trace=trace,
-        risk_state=copy.deepcopy(frozen),
+        risk_state=risk,
         spawned=spawned,
         specialist_results=specialist_results,
         observations=observations,
@@ -176,28 +149,39 @@ async def run_orchestrated_investigation_async(
     )
 
 
-async def _gather(spawned: tuple[str, ...], job: _Job) -> tuple[dict[str, AgentRunResult], list[dict[str, Any]]]:
+async def _gather(
+    spawned: tuple[str, ...], job: _Job
+) -> tuple[dict[str, AgentRunResult], list[dict]]:
     if not spawned:
         return {}, []
     tasks = {
-        name: asyncio.create_task(asyncio.to_thread(_run_specialist, name, job), name=f"specialist-{name}")
+        name: asyncio.create_task(
+            asyncio.to_thread(_run_specialist, name, job), name=f"specialist-{name}"
+        )
         for name in spawned
     }
-    _done, pending = await asyncio.wait(set(tasks.values()), timeout=max(0.01, job.deadline))
+    _done, pending = await asyncio.wait(
+        set(tasks.values()), timeout=max(0.01, job.deadline)
+    )
     results: dict[str, AgentRunResult] = {}
-    extra: list[dict[str, Any]] = []
+    decisions: list[dict] = []
     for name in spawned:
         task = tasks[name]
         if task in pending:
             task.cancel()
-            extra.append({"actor": "orchestrator", "action": "skip", "specialist": name, "reason": "DEADLINE_EXCEEDED"})
+            decisions.append(
+                {"actor": name, "action": "skipped", "reason": "DEADLINE_EXCEEDED"}
+            )
             continue
         try:
             result = task.result()
-        except Exception as exc:  # noqa: BLE001 - isolate one specialist
-            extra.append({"actor": name, "action": "failed", "reason": "UNRESOLVABLE", "error": str(exc)})
+        except Exception as exc:  # noqa: BLE001 - specialists are isolated
+            decisions.append(
+                {"actor": name, "action": "failed", "reason": "UNRESOLVABLE", "error": str(exc)}
+            )
             continue
-        extra.append(
+        results[name] = result
+        decisions.append(
             {
                 "actor": name,
                 "action": "completed",
@@ -206,30 +190,28 @@ async def _gather(spawned: tuple[str, ...], job: _Job) -> tuple[dict[str, AgentR
                 "tools": [item.name for item in result.observations],
             }
         )
-        results[name] = result
-    return results, extra
+    return results, decisions
 
 
 def _run_specialist(name: str, job: _Job) -> AgentRunResult:
     spec = BY_NAME[name]
-    tools = job.registries.get(name) or spec.registry()
+    registry = job.registries.get(name) or spec.registry()
     return run_agent(
-        as_of_date=job.as_of_date,
+        job.case,
         max_steps=job.max_steps,
         overall_deadline_seconds=job.deadline,
-        risk_state=job.risk_state,
-        prior_state=job.prior_state,
         planner=job.planners.get(name),
-        registry=tools,
+        registry=registry,
         use_llm=job.use_llm,
         focus=spec.focus,
         monotonic=job.monotonic,
-        processed_dir=job.processed_dir,
         run_id=f"{job.run_id}-{name[:3]}",
     )
 
 
-def _combined_stop(spawned: tuple[str, ...], results: Mapping[str, AgentRunResult], quiet: bool) -> str:
+def _combined_stop(
+    spawned: tuple[str, ...], results: Mapping[str, AgentRunResult], quiet: bool
+) -> str:
     if not spawned:
         return "NO_INVESTIGATION_NEEDED" if quiet else "UNRESOLVABLE"
     reasons = [results[name].stop_reason for name in spawned if name in results]
@@ -238,5 +220,4 @@ def _combined_stop(spawned: tuple[str, ...], results: Mapping[str, AgentRunResul
     for preferred in ("ESCALATED", "MALFORMED_PLANNER_OUTPUT", "PLANNER_TIMEOUT"):
         if preferred in reasons:
             return preferred
-    unique = list(dict.fromkeys(reasons))
-    return "EVIDENCE_SUFFICIENT" if "EVIDENCE_SUFFICIENT" in unique else unique[0]
+    return "EVIDENCE_SUFFICIENT" if "EVIDENCE_SUFFICIENT" in reasons else reasons[0]

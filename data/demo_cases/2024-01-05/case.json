@@ -1,0 +1,46 @@
+{
+  "schema_version": "investigation-case-v1",
+  "provenance": {
+    "source_repository": "momentum-tail-risk-monitor",
+    "source_commit": "9ff0aff12f00bc158af55e11656360a928590588",
+    "run_fingerprint": "240fa2bb30fabdf4"
+  },
+  "risk_state": {
+    "schema_version": "risk-state-v1",
+    "as_of_date": "2024-01-05",
+    "assessment_cutoff": "2024-01-05T16:00:00-05:00",
+    "comparison_date": null,
+    "market_regime": "bear_low_volatility",
+    "mechanical_unwind_state": "NORMAL",
+    "total_signal_count": 4,
+    "triggered_signals": [],
+    "structural_flags": [],
+    "mechanisms": {
+      "bear_market_recovery_crash": "watch",
+      "crowded_theme_unwind": "not_confirmed",
+      "short_book_reversal_crash": "not_confirmed"
+    },
+    "book": {
+      "portfolio_drawdown": -0.0902711157867091,
+      "short_loss_in_recovery": 0.2038585894990823,
+      "long_beta_126d": 2.0487564426911162,
+      "short_underlying_beta_126d": 1.5308314489469168
+    },
+    "theme_cluster": [],
+    "severity": {
+      "score": 82,
+      "label": "high",
+      "primary_driver": "crowded_unwind",
+      "mechanism_scores": {
+        "book_vulnerability": 64,
+        "crowded_unwind": 82,
+        "dm_recovery": 52,
+        "fundamental_repricing": null
+      },
+      "score_is_probability": false
+    }
+  },
+  "prior_state": null,
+  "evidence": [],
+  "holdings": []
+}

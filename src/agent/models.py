@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 TOOL_NAMES = (
     "get_book_state",
@@ -17,7 +17,6 @@ TOOL_NAMES = (
     "compare_prior_state",
     "search_news",
     "search_positioning",
-    "search_filings",
     "inspect_name",
 )
 
@@ -98,6 +97,14 @@ class AgentDecision(BaseModel):
         if not isinstance(value, list):
             raise ValueError("open_questions must be a list")
         return [str(item) for item in value if str(item).strip()]
+
+    @model_validator(mode="after")
+    def _action_matches_calls(self) -> AgentDecision:
+        if self.action == "call_tools" and not self.tool_calls:
+            raise ValueError("call_tools requires at least one tool call")
+        if self.action != "call_tools" and self.tool_calls:
+            raise ValueError("finish and escalate decisions cannot include tool calls")
+        return self
 
 
 class ToolObservation(BaseModel):

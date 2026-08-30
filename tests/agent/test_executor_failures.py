@@ -9,9 +9,17 @@ from pydantic import BaseModel, ConfigDict, Field
 from src.agent.loop import run_agent
 from src.agent.models import AgentDecision, ToolCall
 from src.agent.planner import ScriptedPlanner
+from src.agent.synthesis import sanitize_text
+from src.risk_state.provider import FrozenCaseProvider
 from src.tools.registry import EmptyArgs, SearchArgs, ToolRegistry, ToolSpec
-from tests.cases import crowding_risk as _crowding_risk
-from tests.cases import quiet_risk as _quiet_risk
+
+
+def _crowding_case():
+    return FrozenCaseProvider().load("2026-05-29")
+
+
+def _quiet_case():
+    return FrozenCaseProvider().load("2024-01-05")
 
 
 def _decision(*names: str, **kwargs) -> AgentDecision:
@@ -74,21 +82,21 @@ def _news_docs(*docs):
 
 
 def test_malformed_planner_output_fails_closed() -> None:
-    original = _crowding_risk()
+    original = _crowding_case()
     result = run_agent(
-        risk_state=original,
+        original,
         planner=ScriptedPlanner([{"hypothesis": "oops"}]),
         registry=_registry({"get_book_state": _ok}),
         overall_deadline_seconds=5,
     )
     assert result.stop_reason == "MALFORMED_PLANNER_OUTPUT"
-    assert result.risk_state["deterministic_trigger_count"] == 1
+    assert result.risk_state.monitoring_trigger_count == 0
     assert result.observations == ()
 
 
 def test_unknown_tool_becomes_observation() -> None:
     result = run_agent(
-        risk_state=_crowding_risk(),
+        _crowding_case(),
         planner=ScriptedPlanner(
             [
                 _decision("not_a_real_tool"),
@@ -104,7 +112,7 @@ def test_unknown_tool_becomes_observation() -> None:
 
 def test_invalid_tool_args_do_not_crash() -> None:
     result = run_agent(
-        risk_state=_crowding_risk(),
+        _crowding_case(),
         planner=ScriptedPlanner(
             [
                 AgentDecision(
@@ -141,7 +149,7 @@ def test_duplicate_tool_call_is_not_reexecuted() -> None:
 
     query = {"search_news": {"query": "crowded unwind"}}
     result = run_agent(
-        risk_state=_crowding_risk(),
+        _crowding_case(),
         planner=ScriptedPlanner(
             [
                 _decision("search_news", args=query),
@@ -166,7 +174,7 @@ def test_in_batch_duplicate_is_canonicalized() -> None:
         return {"documents": []}
 
     result = run_agent(
-        risk_state=_crowding_risk(),
+        _crowding_case(),
         planner=ScriptedPlanner(
             [
                 AgentDecision(
@@ -193,7 +201,7 @@ def test_tool_timeout_is_isolated() -> None:
         return {"ok": True}
 
     result = run_agent(
-        risk_state=_crowding_risk(),
+        _crowding_case(),
         planner=ScriptedPlanner([_decision("get_book_state"), _finish()]),
         registry=_registry({"get_book_state": slow}, timeouts={"get_book_state": 0.05}),
         overall_deadline_seconds=3,
@@ -210,7 +218,7 @@ def test_one_parallel_tool_failing_does_not_kill_run() -> None:
         return {"cluster_symbols": ["COHR"]}
 
     result = run_agent(
-        risk_state=_crowding_risk(),
+        _crowding_case(),
         planner=ScriptedPlanner(
             [
                 AgentDecision(
@@ -240,7 +248,7 @@ def test_overall_deadline_exceeded() -> None:
         return {"ok": True}
 
     result = run_agent(
-        risk_state=_crowding_risk(),
+        _crowding_case(),
         planner=ScriptedPlanner([_decision("get_book_state")]),
         registry=_registry({"get_book_state": slow}, timeouts={"get_book_state": 5.0}),
         overall_deadline_seconds=0.05,
@@ -267,7 +275,7 @@ def test_post_cutoff_evidence_is_rejected() -> None:
         },
     )
     result = run_agent(
-        risk_state=_crowding_risk(),
+        _crowding_case(),
         planner=ScriptedPlanner(
             [
                 AgentDecision(
@@ -301,7 +309,7 @@ def test_repeated_same_search_stops_without_looping() -> None:
         tool_calls=[ToolCall(id="1", name="search_news", args={"query": "crowded unwind"})],
     )
     result = run_agent(
-        risk_state=_crowding_risk(),
+        _crowding_case(),
         planner=ScriptedPlanner([query_decision, query_decision, query_decision]),
         registry=_registry({"search_news": news}, evidence={"search_news"}),
         max_steps=6,
@@ -313,7 +321,7 @@ def test_repeated_same_search_stops_without_looping() -> None:
 
 def test_max_steps_reached() -> None:
     result = run_agent(
-        risk_state=_crowding_risk(),
+        _crowding_case(),
         planner=ScriptedPlanner(
             [
                 _decision("get_book_state"),
@@ -336,7 +344,7 @@ def test_max_steps_reached() -> None:
 
 def test_trade_language_is_stripped_from_report() -> None:
     result = run_agent(
-        risk_state=_crowding_risk(),
+        _crowding_case(),
         planner=ScriptedPlanner(
             [
                 _finish(
@@ -351,6 +359,12 @@ def test_trade_language_is_stripped_from_report() -> None:
     assert "Not confirmed:" in result.report
 
 
+def test_trade_filter_preserves_factual_short_leg_language() -> None:
+    text = sanitize_text("Short NVDA now. Short-leg pain is observed.")
+
+    assert text == "Short-leg pain is observed."
+
+
 def test_llm_planner_accepts_structured_json_only() -> None:
     from src.agent.planner import LLMPlanner
 
@@ -363,7 +377,7 @@ def test_llm_planner_accepts_structured_json_only() -> None:
         )
 
     result = run_agent(
-        risk_state=_quiet_risk(),
+        _quiet_case(),
         planner=LLMPlanner(api_key="test", transport=transport),
         registry=_registry({"get_book_state": _ok}),
     )

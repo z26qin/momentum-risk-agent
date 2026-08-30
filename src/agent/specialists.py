@@ -1,22 +1,23 @@
 """Mechanism specialists: routing, tools, prompt addendum, finish copy.
 
 One table owns the names the rest of the agent refers to. Adding a monitor
-means adding a row here, not copying orchestrator/report/planner branches.
+means adding a row here, not copying orchestrator/synthesis/planner branches.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Mapping
+from typing import Callable
 
-from src.agent_prompts import (
+from src.agent.signals import (
     crowding_signal_present,
     no_meaningful_risk_signal,
     recovery_setup_present,
 )
+from src.risk_state.models import RiskState
 from src.tools.registry import ToolRegistry, crowding_registry, recovery_registry
 
-Signal = Callable[[Any], bool]
+Signal = Callable[[RiskState], bool]
 RegistryFactory = Callable[..., ToolRegistry]
 
 
@@ -80,7 +81,7 @@ UNRESOLVABLE_FINISH = (
 )
 
 
-def select_specialists(risk_state: Mapping[str, Any]) -> tuple[str, ...]:
+def select_specialists(risk_state: RiskState) -> tuple[str, ...]:
     """Quiet books spawn nobody. Flags, not leftover primary_driver labels."""
 
     if no_meaningful_risk_signal(risk_state):
@@ -88,7 +89,7 @@ def select_specialists(risk_state: Mapping[str, Any]) -> tuple[str, ...]:
     return tuple(spec.name for spec in SPECIALISTS if spec.signal(risk_state))
 
 
-def finish_text_for(risk_state: Mapping[str, Any], focus: str | None) -> str:
+def finish_text_for(risk_state: RiskState, focus: str | None) -> str:
     for spec in SPECIALISTS:
         if spec.signal(risk_state) and focus in {None, spec.focus}:
             return spec.finish_text

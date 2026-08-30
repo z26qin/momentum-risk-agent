@@ -1,5 +1,6 @@
 .venv/
 .uv-cache/
+.worktrees/
 __pycache__/
 *.py[cod]
 .pytest_cache/
@@ -11,36 +12,5 @@ dist/
 .env
 .env.*
 
-# Optional DeepSeek explanation cache (regenerable; not part of the frozen demo).
-outputs/gdelt_evidence_cache/
-outputs/llm_cache/
-
-# Exploratory narrative-shift POC (DeepSeek Responses API; not a frozen pack).
-outputs/narrative_shift_poc/
-
-# Hermes / WhatsApp POC runtime (local state, not frozen demo packs).
-runtime_state/
-outputs/latest_assessment.json
-outputs/latest_comparison.json
-outputs/agent_traces/
-
-# Alternative-data raw caches.
-# Cached locally so later sessions make zero network calls; too large for git.
-# Provenance remains in committed manifests under data/raw/*/ and processed extracts.
-data/raw/finra/daily/
-data/raw/prices/
-data/raw/sp500/prices/
-data/raw/sp500/benchmark/
-data/raw/gdelt/*.json
-!data/raw/gdelt/*.metadata.json
-!data/raw/gdelt/acquisition_report.json
-data/raw/sec/company_facts_CIK*.json
-
-# Local SEC feasibility extracts (not part of the PM-facing submission path).
-outputs/fundamental_alignment/
-
-# Reference papers. Read locally, cited by number in the memo, never
-# redistributed: this repository is public and the working papers are not
-# ours to republish. Daniel-Moskowitz (2016) is NBER w20439.
-momentum crash paper/
+agent_traces/
 *.pdf
