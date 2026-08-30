@@ -259,7 +259,7 @@ def test_overall_deadline_exceeded() -> None:
         assert result.observations[0].status in {"timeout", "deadline"}
 
 
-def test_post_cutoff_evidence_is_rejected() -> None:
+def test_given_valid_and_future_evidence_when_synthesized_then_only_valid_is_cited() -> None:
     docs = _news_docs(
         {
             "evidence_id": "OK",
@@ -294,6 +294,9 @@ def test_post_cutoff_evidence_is_rejected() -> None:
     assert "OK" in ids
     assert "FUTURE" not in ids
     assert result.observations[0].discarded_post_cutoff >= 1
+    assert "Citations:" in result.report
+    assert "[OK] 2026-05-04 hedge fund technology exposure reduction" in result.report
+    assert "[FUTURE]" not in result.report
     assert "future leak" not in result.report.lower()
 
 

@@ -105,10 +105,19 @@ def test_specialists_overlap_on_one_shared_deadline() -> None:
     assert elapsed < 0.36
 
 
-def test_combined_synthesis_is_rendered_once() -> None:
+def test_given_dual_specialists_when_combined_then_sections_and_citations_are_unique() -> None:
     result = run_orchestrated_investigation(_dual_case(), use_llm=False)
 
-    for heading in ("Current read", "Observed:", "Inferred:", "Against:", "Not confirmed:"):
+    for heading in (
+        "Current read",
+        "Observed:",
+        "Inferred:",
+        "Against:",
+        "Not confirmed:",
+        "Citations:",
+    ):
         assert result.report.count(heading) == 1
+    citations = result.trace.calibrated["citations"]
+    assert len(citations) == len(set(citations))
     assert "not merged into one score" in result.report.lower()
     assert result.trace.calibrated["score_is_probability"] is False
