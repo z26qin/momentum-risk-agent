@@ -26,6 +26,25 @@ uv run python scripts/run_agent.py --as-of-date 2020-03-24 --planner heuristic -
 Use `--save-trace agent_traces/<name>.json` to inspect routing, structured
 decisions, tool observations, errors, stop reasons, and calibrated output.
 
+## Console replay
+
+Export and open the browser console:
+
+```bash
+uv run python scripts/export_frontend_cases.py
+cd frontend
+npm ci
+npm run dev
+```
+
+The three date tabs use the same supported cases as the CLI. Playback shows the
+Python-authored route, plan, observe, stop, and combine events in order. The
+quiet January case contains only route and combine events and runs no tools.
+
+The local `RE-RUN AGENT` button reruns the selected case with heuristic planning
+through the Vite development server. It is limited to the three frozen dates;
+it does not expose or use a browser-side DeepSeek credential.
+
 ## DeepSeek planner
 
 Set `DEEPSEEK_API_KEY` in the repository's ignored `.env`, then replace

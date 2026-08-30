@@ -46,6 +46,27 @@ Expected routing:
 | `2024-01-05` | no specialist and no tool calls |
 | `2020-03-24` | recovery specialist |
 
+### Investigation console
+
+The optional React console replays the exact frozen `RiskState`, public agent
+loop events, and calibrated PM note. It does not recompute triggers, mechanisms,
+severity, or probability in browser code.
+
+```bash
+uv run python scripts/export_frontend_cases.py
+cd frontend
+npm ci
+npm run dev
+```
+
+Open `http://127.0.0.1:5173`. The console can play, pause, step, and reset each
+exported loop. `RE-RUN AGENT` calls a Vite-only local API for the same three
+supported dates; the subprocess always uses heuristic planning. No DeepSeek key
+or other server environment value is exposed to browser JavaScript.
+
+Use `npm run sync-cases` after deterministic case or agent-contract changes.
+There is one generated frontend fixture: `frontend/public/cases.json`.
+
 `--planner auto` uses DeepSeek when `DEEPSEEK_API_KEY` is present and otherwise
 uses the fail-closed heuristic planner.
 
@@ -112,8 +133,9 @@ src/tools/       typed registry and case-local read-only observations
 src/risk_state/  immutable contracts and provider interface
 data/demo_cases/ three active deterministic cases
 archive/data/    inherited non-runtime data retained for provenance
-scripts/         one orchestrated CLI
+scripts/         agent CLI plus deterministic console export/rerun adapters
 tests/           focused boundary, runtime, tool, and failure tests
+frontend/        React investigation console over the public agent contract
 ```
 
 See [architecture](docs/architecture.md), [demo walkthrough](docs/demo.md), and
