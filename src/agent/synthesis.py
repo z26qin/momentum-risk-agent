@@ -70,6 +70,7 @@ def calibrated_buckets(state: AgentState) -> dict[str, Any]:
         "inferred": _unique(inferred) or ["No inference beyond the deterministic state."],
         "contradicted": _unique(against) or ["None"],
         "not_confirmed": _unique(not_confirmed) or ["None"],
+        "citations": _citations(state) or ["None"],
         "next_useful_check": next_check,
         "what_changed": _what_changed(state),
         "current_read": _current_read(state),
@@ -99,6 +100,7 @@ def build_combined_pm_note(
     inferred: list[str] = []
     against: list[str] = []
     not_confirmed: list[str] = []
+    citations: list[str] = []
     for name in spawned:
         buckets = mechanisms.get(name)
         if not buckets:
@@ -107,6 +109,7 @@ def build_combined_pm_note(
         inferred.extend(_label(buckets["inferred"], label))
         against.extend(_label(buckets["contradicted"], label))
         not_confirmed.extend(_label(buckets["not_confirmed"], label))
+        citations.extend(item for item in buckets["citations"] if item != "None")
         for item in buckets["observed"]:
             if item not in observed:
                 observed.extend(_label([item], label))
@@ -115,6 +118,7 @@ def build_combined_pm_note(
         "inferred": _unique(inferred) or ["No inference beyond the deterministic state."],
         "contradicted": _unique(against) or ["None"],
         "not_confirmed": _unique(not_confirmed) or ["None"],
+        "citations": _unique(citations) or ["None"],
         "current_read": _combined_read(spawned, stop_reason),
         "what_changed": _combined_change(risk_state, mechanisms),
         "next_useful_check": _combined_next(spawned, mechanisms),
@@ -135,6 +139,7 @@ def render_pm_note(buckets: Mapping[str, Any], path: str) -> str:
         f"Inferred:\n{_bullets(buckets['inferred'])}\n\n"
         f"Against:\n{_bullets(buckets['contradicted'])}\n\n"
         f"Not confirmed:\n{_bullets(buckets['not_confirmed'])}\n\n"
+        f"Citations:\n{_bullets(buckets.get('citations') or ['None'])}\n\n"
         f"Investigation path:\n{path}\n\n"
         f"What changed:\n{buckets['what_changed']}\n\n"
         f"Next useful check:\n{buckets['next_useful_check']}\n"
@@ -192,6 +197,27 @@ def _what_changed(state: AgentState) -> str:
     )
 
 
+def _cite_document(document: Mapping[str, Any]) -> str:
+    evidence_id = str(document.get("evidence_id") or "").strip()
+    published = str(document.get("published_at") or "").strip()[:10]
+    headline = str(document.get("headline") or "").strip()[:160]
+    return " ".join(
+        part
+        for part in (f"[{evidence_id}]" if evidence_id else "", published, headline)
+        if part
+    )
+
+
+def _citations(state: AgentState) -> list[str]:
+    return _unique(
+        [
+            _cite_document(document)
+            for document in state.evidence
+            if isinstance(document, dict)
+        ]
+    )
+
+
 def _observed_from_tool(item: ToolObservation) -> list[str]:
     if item.status != "ok" or not isinstance(item.payload, dict):
         return []
@@ -208,8 +234,9 @@ def _observed_from_tool(item: ToolObservation) -> list[str]:
             + (f" leg={holding.get('leg')}" if holding.get("leg") else "")
         ]
     docs = payload.get("documents") or []
-    if docs:
-        return [f"{item.name}: {str(docs[0].get('headline') or '')[:160]}"]
+    if docs and isinstance(docs[0], dict):
+        citation = _cite_document(docs[0])
+        return [f"{item.name}: {citation}"] if citation else []
     return []
 
 

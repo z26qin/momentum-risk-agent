@@ -70,8 +70,23 @@ uv run python scripts/run_agent.py --as-of-date 2026-05-29 --planner llm --verbo
 The planner calls DeepSeek's `/chat/completions` endpoint in non-thinking JSON
 mode with an 800-token output cap. Every response must be one complete JSON
 object that validates as an `AgentDecision`; empty, truncated, wrapped, or
-malformed responses stop the specialist without executing unvalidated calls.
+malformed responses never execute unvalidated calls. With a valid API key, a
+runtime DeepSeek timeout or malformed response switches that specialist once to
+its bounded heuristic planner; the transition is recorded in the trace. An
+explicit `--planner llm` still exits before orchestration when the key is empty.
 `DEEPSEEK_MODEL` and `DEEPSEEK_BASE_URL` remain optional overrides.
+
+### Evidence resilience
+
+Cutoff-valid evidence is rendered in Observed and in one deduplicated
+`Citations:` section using `[evidence_id] YYYY-MM-DD headline`. Rejected
+post-cutoff documents cannot enter either section.
+
+An executed read that raises a handler exception or reaches its per-tool timeout
+gets at most one additional attempt when the shared investigation deadline still
+has budget. Unknown tools, invalid arguments, semantic duplicates, cutoff
+rejections, and exhausted deadlines are not retried. Each observation exposes
+its attempt count in the trace.
 
 ## Public API
 

@@ -17,7 +17,7 @@ from src.agent.models import (
     StopReason,
     ToolObservation,
 )
-from src.agent.planner import Planner, resolve_planner
+from src.agent.planner import HeuristicPlanner, Planner, resolve_planner
 from src.agent.state import AgentState
 from src.agent.synthesis import build_pm_note, calibrated_buckets, sanitize_text
 from src.risk_state.models import InvestigationCase, RiskState
@@ -80,9 +80,13 @@ def run_agent(
         remaining_seconds=deadline,
         focus=focus,
     )
-    _run_loop(
+    fallback = (
+        HeuristicPlanner(focus=focus) if str(selected.kind).startswith("llm") else None
+    )
+    planner_kind = _run_loop(
         state,
         planner=selected,
+        fallback=fallback,
         executor=Executor(tools, monotonic=monotonic),
         ctx=ToolContext.from_case(case),
         monotonic=monotonic,
@@ -94,11 +98,11 @@ def run_agent(
         as_of_date=state.as_of_date,
         stop_reason=state.stop_reason or "MAX_STEPS",
         report=report,
-        trace=_build_trace(state, selected.kind, report),
+        trace=_build_trace(state, planner_kind, report),
         risk_state=case.risk_state,
         observations=tuple(state.observations),
         state=state,
-        planner_kind=selected.kind,
+        planner_kind=planner_kind,
     )
 
 
@@ -106,30 +110,45 @@ def _run_loop(
     state: AgentState,
     *,
     planner: Planner,
+    fallback: Planner | None,
     executor: Executor,
     ctx: ToolContext,
     monotonic: Monotonic,
     started: float,
-) -> None:
+) -> str:
+    active = planner
+    transitioned = False
+
+    def planner_path() -> str:
+        return f"{planner.kind}->{active.kind}" if transitioned else active.kind
+
     while state.status == "running":
         remaining = state.overall_deadline_seconds - (monotonic() - started)
         state.remaining_seconds = remaining
         if remaining <= 0:
             _stop(state, "DEADLINE_EXCEEDED")
-            return
+            return planner_path()
         if state.step >= state.max_steps:
             _stop(state, "MAX_STEPS")
-            return
+            return planner_path()
         try:
-            decision = parse_decision(planner.decide(state))
-        except TimeoutError as exc:
-            state.errors.append(str(exc))
-            _stop(state, "PLANNER_TIMEOUT")
-            return
-        except MalformedPlannerOutput as exc:
-            state.errors.append(f"malformed planner output: {exc}")
-            _stop(state, "MALFORMED_PLANNER_OUTPUT")
-            return
+            decision = parse_decision(active.decide(state))
+        except (TimeoutError, MalformedPlannerOutput) as exc:
+            if fallback is not None and active is planner:
+                label = "timeout" if isinstance(exc, TimeoutError) else "malformed output"
+                state.errors.append(
+                    f"LLM planner {label}; falling back to heuristic: {exc}"
+                )
+                active = fallback
+                transitioned = True
+                continue
+            if isinstance(exc, TimeoutError):
+                state.errors.append(str(exc))
+                _stop(state, "PLANNER_TIMEOUT")
+            else:
+                state.errors.append(f"malformed planner output: {exc}")
+                _stop(state, "MALFORMED_PLANNER_OUTPUT")
+            return planner_path()
         state.step += 1
         state.decisions.append(decision)
         state.last_decision = decision
@@ -140,16 +159,17 @@ def _run_loop(
                 state.open_questions.append(question)
         if decision.action in {"finish", "escalate"}:
             _stop(state, _map_stop_reason(decision))
-            return
+            return planner_path()
         batch = executor.execute_decision(decision, state, ctx, remaining_seconds=remaining)
         state.observations.extend(batch)
         _ingest_evidence(state, batch)
         if monotonic() - started >= state.overall_deadline_seconds:
             _stop(state, "DEADLINE_EXCEEDED")
-            return
+            return planner_path()
         if batch and all(item.status == "duplicate" for item in batch):
             _stop(state, "UNRESOLVABLE")
-            return
+            return planner_path()
+    return planner_path()
 
 
 def _ingest_evidence(state: AgentState, batch: list[ToolObservation]) -> None:

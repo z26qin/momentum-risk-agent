@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import time
 
+import pytest
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.agent.loop import run_agent
 from src.agent.models import AgentDecision, ToolCall
-from src.agent.planner import ScriptedPlanner
+from src.agent.planner import LLMPlanner, ScriptedPlanner
 from src.agent.synthesis import sanitize_text
 from src.risk_state.provider import FrozenCaseProvider
 from src.tools.registry import EmptyArgs, SearchArgs, ToolRegistry, ToolSpec
@@ -238,6 +239,91 @@ def test_one_parallel_tool_failing_does_not_kill_run() -> None:
     by_name = {item.name: item for item in result.observations}
     assert by_name["get_cluster_exposure"].status == "ok"
     assert by_name["get_book_state"].status == "error"
+
+
+def test_given_transient_handler_error_when_budget_remains_then_tool_retries_once() -> None:
+    calls = {"count": 0}
+
+    def flaky(_ctx, _args):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise RuntimeError("transient")
+        return {"ok": True}
+
+    result = run_agent(
+        _crowding_case(),
+        planner=ScriptedPlanner([_decision("get_book_state"), _finish()]),
+        registry=_registry({"get_book_state": flaky}),
+    )
+
+    assert calls["count"] == 2
+    assert result.observations[0].status == "ok"
+    assert result.observations[0].attempts == 2
+
+
+def test_given_transient_timeout_when_budget_remains_then_tool_retries_once() -> None:
+    calls = {"count": 0}
+
+    def flaky(_ctx, _args):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            time.sleep(0.05)
+        return {"ok": True}
+
+    result = run_agent(
+        _crowding_case(),
+        planner=ScriptedPlanner([_decision("get_book_state"), _finish()]),
+        registry=_registry({"get_book_state": flaky}, timeouts={"get_book_state": 0.01}),
+    )
+
+    assert calls["count"] == 2
+    assert result.observations[0].status == "ok"
+    assert result.observations[0].attempts == 2
+
+
+def test_given_two_handler_failures_when_executed_then_final_error_is_isolated() -> None:
+    calls = {"count": 0}
+
+    def broken(_ctx, _args):
+        calls["count"] += 1
+        raise RuntimeError("still down")
+
+    result = run_agent(
+        _crowding_case(),
+        planner=ScriptedPlanner([_decision("get_book_state"), _finish()]),
+        registry=_registry({"get_book_state": broken}),
+    )
+
+    assert calls["count"] == 2
+    assert result.observations[0].status == "error"
+    assert result.observations[0].attempts == 2
+
+
+@pytest.mark.parametrize("failure", ["malformed", "timeout"])
+def test_given_runtime_llm_failure_when_budget_remains_then_specialist_falls_back_once(
+    failure: str,
+) -> None:
+    def transport(**kwargs):
+        del kwargs
+        if failure == "timeout":
+            raise TimeoutError("provider unavailable")
+        return "not-json"
+
+    result = run_agent(
+        _crowding_case(),
+        planner=LLMPlanner(
+            api_key="test",
+            transport=transport,
+            focus="kl_crowding",
+        ),
+        focus="kl_crowding",
+    )
+
+    assert result.stop_reason == "EVIDENCE_SUFFICIENT"
+    assert result.planner_kind == "llm-kl_crowding->heuristic-kl_crowding"
+    assert result.trace.planner_kind == result.planner_kind
+    assert sum("falling back to heuristic" in item for item in result.state.errors) == 1
+    assert result.state.step == 3
     assert result.stop_reason == "EVIDENCE_SUFFICIENT"
     assert "Observed:" in result.report
 
@@ -259,7 +345,7 @@ def test_overall_deadline_exceeded() -> None:
         assert result.observations[0].status in {"timeout", "deadline"}
 
 
-def test_post_cutoff_evidence_is_rejected() -> None:
+def test_given_valid_and_future_evidence_when_synthesized_then_only_valid_is_cited() -> None:
     docs = _news_docs(
         {
             "evidence_id": "OK",
@@ -294,6 +380,9 @@ def test_post_cutoff_evidence_is_rejected() -> None:
     assert "OK" in ids
     assert "FUTURE" not in ids
     assert result.observations[0].discarded_post_cutoff >= 1
+    assert "Citations:" in result.report
+    assert "[OK] 2026-05-04 hedge fund technology exposure reduction" in result.report
+    assert "[FUTURE]" not in result.report
     assert "future leak" not in result.report.lower()
 
 

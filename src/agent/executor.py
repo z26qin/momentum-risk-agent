@@ -18,9 +18,16 @@ from src.agent.cutoff import published_by_cutoff
 from src.agent.models import AgentDecision, ToolCall, ToolObservation
 from src.agent.state import AgentState
 from src.tools.context import ToolContext
-from src.tools.registry import MAX_PARALLEL_TOOLS, ToolRegistry, default_registry
+from src.tools.registry import MAX_PARALLEL_TOOLS, TOOL_RETRIES, ToolRegistry, default_registry
 
 Monotonic = Callable[[], float]
+
+
+class _ToolAttemptsExhausted(Exception):
+    def __init__(self, cause: BaseException, attempts: int) -> None:
+        super().__init__(str(cause))
+        self.cause = cause
+        self.attempts = attempts
 
 
 def canonical_key(name: str, args: Mapping[str, Any]) -> str:
@@ -144,15 +151,20 @@ class Executor:
             futures = {}
             for call, args, parsed in runnable:
                 spec = self.registry.get(call.name)
-                timeout = min(spec.timeout_seconds if spec else 0.1, max(0.0, remaining_seconds))
                 futures[
-                    pool.submit(self._run_one, spec, ctx, parsed, timeout)
+                    pool.submit(
+                        self._run_with_retry,
+                        spec,
+                        ctx,
+                        parsed,
+                        remaining_seconds,
+                    )
                 ] = (call, args)
             done, not_done = wait(futures, timeout=max(0.01, remaining_seconds))
             for future in done:
                 call, args = futures[future]
                 try:
-                    payload, discarded, elapsed_ms = future.result(timeout=0)
+                    payload, discarded, elapsed_ms, attempts = future.result(timeout=0)
                     observations.append(
                         ToolObservation(
                             tool_call_id=call.id,
@@ -162,8 +174,32 @@ class Executor:
                             payload=payload,
                             elapsed_ms=elapsed_ms,
                             discarded_post_cutoff=discarded,
+                            attempts=attempts,
                         )
                     )
+                except _ToolAttemptsExhausted as exc:
+                    if isinstance(exc.cause, TimeoutError):
+                        observations.append(
+                            _error(
+                                call,
+                                args,
+                                "timeout",
+                                "timeout",
+                                str(exc.cause),
+                                attempts=exc.attempts,
+                            )
+                        )
+                    else:
+                        observations.append(
+                            _error(
+                                call,
+                                args,
+                                "error",
+                                "tool_exception",
+                                str(exc.cause),
+                                attempts=exc.attempts,
+                            )
+                        )
                 except FuturesTimeout:
                     observations.append(_error(call, args, "timeout", "timeout", "tool exceeded its timeout"))
                 except Exception as exc:  # noqa: BLE001 - isolate tool failure
@@ -174,6 +210,34 @@ class Executor:
                     _error(call, args, "deadline", "deadline", "overall investigation deadline reached")
                 )
         return observations
+
+    def _run_with_retry(
+        self,
+        spec,
+        ctx: ToolContext,
+        parsed,
+        remaining_seconds: float,
+    ) -> tuple[Any, int, int, int]:
+        started = self.monotonic()
+        attempts = 0
+        last_error: BaseException | None = None
+        for attempt in range(1, TOOL_RETRIES + 2):
+            leftover = remaining_seconds - (self.monotonic() - started)
+            timeout = min(spec.timeout_seconds if spec else 0.0, max(0.0, leftover))
+            if timeout <= 0:
+                break
+            attempts = attempt
+            try:
+                payload, discarded, elapsed_ms = self._run_one(
+                    spec, ctx, parsed, timeout
+                )
+                return payload, discarded, elapsed_ms, attempts
+            except Exception as exc:  # noqa: BLE001 - retry only executed handlers
+                last_error = exc
+                if attempt > TOOL_RETRIES:
+                    break
+        cause = last_error or TimeoutError("overall investigation deadline reached")
+        raise _ToolAttemptsExhausted(cause, max(1, attempts))
 
     def _run_one(self, spec, ctx: ToolContext, parsed, timeout: float) -> tuple[Any, int, int]:
         if spec is None:
@@ -243,6 +307,8 @@ def _error(
     status: str,
     error_type: str,
     message: str,
+    *,
+    attempts: int = 1,
 ) -> ToolObservation:
     return ToolObservation(
         tool_call_id=call.id or call.name,
@@ -251,4 +317,5 @@ def _error(
         args=dict(args),
         error_type=error_type,
         error_message=message,
+        attempts=attempts,
     )

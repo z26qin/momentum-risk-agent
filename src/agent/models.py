@@ -119,6 +119,7 @@ class ToolObservation(BaseModel):
     error_message: str | None = None
     elapsed_ms: int = 0
     discarded_post_cutoff: int = 0
+    attempts: int = Field(default=1, ge=1)
 
 
 class AgentRunTrace(BaseModel):
