@@ -44,9 +44,25 @@
   .metric-row { @apply flex justify-between gap-3 font-mono text-[10px] text-muted border-b border-line pb-1.5; }
   .severity-track { @apply relative h-3 border border-line bg-bg mt-2; background: linear-gradient(90deg, #24313b, #73582b 60%, #d9a03f); }
   .severity-marker { @apply absolute -top-1.5 w-0.5 h-6 bg-ink; transform: translateX(-1px); }
-  .trace-placeholder { @apply min-h-[520px] p-5 lg:p-7 flex flex-col gap-6 bg-bg; }
-  .trace-summary { @apply flex-1 flex flex-col items-center justify-center gap-4 border border-line bg-panel/30; }
-  .trace-orbit { @apply w-20 h-20 rounded-full border border-amber flex items-center justify-center font-mono text-2xl text-amber; box-shadow: 0 0 40px rgba(217,160,63,.12); }
+  .trace-panel { @apply min-h-[520px] p-5 lg:p-7 flex flex-col gap-4 bg-bg min-w-0; }
+  .trace-controls { @apply flex flex-wrap items-center gap-1.5; }
+  .trace-control { @apply font-mono text-[10px] tracking-wide px-2 py-1 border border-line text-muted bg-transparent cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed; }
+  .trace-control:hover:not(:disabled) { @apply border-muted text-ink; }
+  .trace-control-active { @apply border-amber text-amber; }
+  .event-index { @apply flex flex-wrap gap-1; }
+  .event-index-item { @apply w-7 h-6 border border-dashed border-line text-line bg-transparent font-mono text-[9px] cursor-pointer; }
+  .event-index-seen { @apply border-solid text-ink; }
+  .event-index-current { @apply border-amber text-amber; }
+  .orchestrator-row, .combined-row { @apply flex items-center gap-3 flex-wrap; }
+  .orchestrator-node { @apply w-2.5 h-2.5 bg-ink shrink-0; }
+  .combine-node { @apply w-2.5 h-2.5 bg-amber shrink-0; }
+  .event-stream { @apply flex-1 flex flex-col gap-2 border-l border-line pl-5 ml-[5px] min-h-[190px]; }
+  .event-card { @apply border border-line p-2.5 flex flex-col gap-1.5 bg-panel/40; }
+  .event-card-current { @apply border-amber; }
+  .event-kind { @apply font-mono text-[9px] tracking-wide text-amber border border-amber px-1.5 py-0.5; }
+  .event-audit { @apply flex flex-wrap gap-x-3 gap-y-1 font-mono text-[9px] text-muted; }
+  .specialist-grid { @apply grid grid-cols-1 xl:grid-cols-2 gap-3; }
+  .specialist-card { @apply border border-line bg-panel p-3 flex flex-col gap-2; }
   .bucket-label { @apply self-start font-grot text-[10px] tracking-[0.14em] uppercase text-muted; }
   .bucket-label-inverted { @apply bg-ink text-bg px-2 py-0.5 font-semibold; }
   .bucket { @apply flex flex-col gap-1.5 p-2.5; }

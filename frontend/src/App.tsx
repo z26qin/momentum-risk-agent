@@ -1,13 +1,18 @@
 import { useEffect, useState } from "react";
+import { InvestigationTracePanel } from "./components/InvestigationTrace";
 import { PMNotePanel } from "./components/PMNote";
 import { RiskStatePanel } from "./components/RiskStatePanel";
-import { loadCases } from "./data/cases";
+import { loadCases, rerunCase } from "./data/cases";
+import { notePhaseFor } from "./data/playback";
 import type { CaseData } from "./data/types";
+import { useLoopPlayback } from "./hooks/useLoopPlayback";
 
 export default function App() {
   const [cases, setCases] = useState<CaseData[]>([]);
   const [selectedDate, setSelectedDate] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [rerunning, setRerunning] = useState(false);
+  const [rerunError, setRerunError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -28,6 +33,57 @@ export default function App() {
   if (error) return <main className="load-state">Console unavailable: {error}</main>;
   if (!current) return <main className="load-state">Loading frozen investigations…</main>;
 
+  return <LoadedConsole
+    key={`${current.date}:${current.source}:${current.elapsed_seconds}`}
+    cases={cases}
+    current={current}
+    selectedDate={selectedDate}
+    setSelectedDate={setSelectedDate}
+    setCases={setCases}
+    rerunning={rerunning}
+    setRerunning={setRerunning}
+    rerunError={rerunError}
+    setRerunError={setRerunError}
+  />;
+}
+
+function LoadedConsole({
+  cases,
+  current,
+  selectedDate,
+  setSelectedDate,
+  setCases,
+  rerunning,
+  setRerunning,
+  rerunError,
+  setRerunError,
+}: {
+  cases: CaseData[];
+  current: CaseData;
+  selectedDate: string;
+  setSelectedDate: (date: string) => void;
+  setCases: React.Dispatch<React.SetStateAction<CaseData[]>>;
+  rerunning: boolean;
+  setRerunning: (value: boolean) => void;
+  rerunError: string | null;
+  setRerunError: (value: string | null) => void;
+}) {
+  const playback = useLoopPlayback(current.trace.loop.length);
+  const phase = notePhaseFor(current.trace.loop, playback.revealed);
+
+  async function handleRerun() {
+    setRerunning(true);
+    setRerunError(null);
+    try {
+      const next = await rerunCase(current.date);
+      setCases((previous) => previous.map((item) => item.date === next.date ? next : item));
+    } catch (reason) {
+      setRerunError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setRerunning(false);
+    }
+  }
+
   return (
     <div className="min-h-screen flex flex-col bg-bg">
       <header className="app-header">
@@ -40,7 +96,7 @@ export default function App() {
             <button
               key={item.date}
               type="button"
-              className={`case-tab ${item.date === current.date ? "case-tab-active" : ""}`}
+              className={`case-tab ${item.date === selectedDate ? "case-tab-active" : ""}`}
               onClick={() => setSelectedDate(item.date)}
             >
               {item.date}
@@ -50,28 +106,25 @@ export default function App() {
         <div className="header-meta">
           <span>cutoff {current.risk_state.assessment_cutoff}</span>
           <span>{current.source} · heuristic contract</span>
+          {rerunError && <span className="text-amber">{rerunError}</span>}
         </div>
       </header>
 
       <main className="console-grid">
         <RiskStatePanel data={current.risk_state} />
-        <section className="trace-placeholder" aria-labelledby="trace-title">
-          <div className="panel-title-row">
-            <h2 id="trace-title" className="panel-title">Investigation trace</h2>
-            <span className="microcopy">{current.trace.schedule}</span>
-          </div>
-          <div className="trace-summary">
-            <span className="trace-orbit">{current.trace.loop.length}</span>
-            <p className="font-serif text-xl m-0">Bounded agent loop</p>
-            <p className="microcopy m-0 text-center">
-              {current.trace.routed_specialists.length
-                ? `routed to ${current.trace.routed_specialists.join(", ")}`
-                : "no specialist routed"}
-            </p>
-            <span className="status-chip text-amber border-amber">{current.trace.combined_stop}</span>
-          </div>
-        </section>
-        <PMNotePanel data={current.note} />
+        <InvestigationTracePanel
+          data={current.trace}
+          revealed={playback.revealed}
+          playing={playback.playing}
+          onPlay={playback.play}
+          onPause={playback.pause}
+          onStep={playback.step}
+          onReset={playback.reset}
+          onJump={playback.jump}
+          onRerun={handleRerun}
+          rerunning={rerunning}
+        />
+        <PMNotePanel data={current.note} phase={phase} />
       </main>
 
       <footer className="app-footer">
