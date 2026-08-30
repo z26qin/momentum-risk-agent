@@ -11,8 +11,10 @@ from src.agent.state import AgentState
 from src.risk_state.models import RiskState
 
 _TRADE = re.compile(
-    r"(?i)\b(buy|sell|short|cover|de-?gross|place an order|enter a trade|"
-    r"cut the longs?|cut the book|hedge now)\b"
+    r"(?i:\b(?:buy|sell|cover|de-?gross|place an order|enter a trade|"
+    r"cut the longs?|cut the book|hedge now)\b)|"
+    r"\b(?i:short)\s+(?:(?i:(?:the\s+)?(?:stock|shares?|name|position|book))|"
+    r"[A-Z]{1,5})\b"
 )
 _CRASH_PROB = re.compile(
     r"(?i)(crash probability|\d+\s*%\s*(chance|probability) of (a )?crash|"

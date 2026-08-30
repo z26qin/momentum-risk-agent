@@ -135,6 +135,25 @@ def test_case_rejects_unknown_fields() -> None:
         InvestigationCase.model_validate(raw)
 
 
+def test_case_rejects_naive_evidence_publication_timestamp() -> None:
+    raw = _raw_case()
+    raw["evidence"] = [
+        {
+            "evidence_id": "news-1",
+            "published_at": "2026-05-29T12:00:00",
+            "source": "test",
+            "headline": "Crowding update",
+            "snippet": "Positioning remains elevated.",
+            "channels": ["news"],
+            "symbols": ["CIEN"],
+            "stance": "contextual",
+        }
+    ]
+
+    with pytest.raises(ValidationError):
+        InvestigationCase.model_validate(raw)
+
+
 def test_provider_fails_closed_on_malformed_case_file(tmp_path: Path) -> None:
     case_dir = tmp_path / "2026-05-29"
     case_dir.mkdir(parents=True)
@@ -142,4 +161,3 @@ def test_provider_fails_closed_on_malformed_case_file(tmp_path: Path) -> None:
 
     with pytest.raises(ValidationError):
         FrozenCaseProvider(tmp_path).load("2026-05-29")
-

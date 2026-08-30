@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from src.agent.loop import run_agent
 from src.agent.models import AgentDecision, ToolCall
 from src.agent.planner import ScriptedPlanner
+from src.agent.synthesis import sanitize_text
 from src.risk_state.provider import FrozenCaseProvider
 from src.tools.registry import EmptyArgs, SearchArgs, ToolRegistry, ToolSpec
 
@@ -356,6 +357,12 @@ def test_trade_language_is_stripped_from_report() -> None:
     assert "sell the longs" not in result.report.lower()
     assert "Observed:" in result.report
     assert "Not confirmed:" in result.report
+
+
+def test_trade_filter_preserves_factual_short_leg_language() -> None:
+    text = sanitize_text("Short NVDA now. Short-leg pain is observed.")
+
+    assert text == "Short-leg pain is observed."
 
 
 def test_llm_planner_accepts_structured_json_only() -> None:

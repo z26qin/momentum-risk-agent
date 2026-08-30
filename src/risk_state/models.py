@@ -127,6 +127,13 @@ class EvidenceDocument(FrozenModel):
     symbols: tuple[str, ...] = ()
     stance: Literal["supporting", "contradicting", "contextual", "mixed"] | None = None
 
+    @field_validator("published_at")
+    @classmethod
+    def _published_at_is_aware(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("evidence publication timestamp must be timezone-aware")
+        return value
+
     @field_validator("symbols")
     @classmethod
     def _symbols_upper(cls, value: tuple[str, ...]) -> tuple[str, ...]:
