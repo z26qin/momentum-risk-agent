@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -12,6 +13,7 @@ if str(ROOT) not in sys.path:
 
 from pydantic import ValidationError
 
+from src.agent.config import load_deepseek_env
 from src.agent.loop import MAX_STEPS, OVERALL_DEADLINE_SECONDS
 from src.agent.orchestrator import run_orchestrated_investigation
 from src.risk_state.provider import FrozenCaseProvider, UnsupportedCaseError
@@ -40,7 +42,11 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    load_deepseek_env(ROOT / ".env")
     args = _build_parser().parse_args()
+    if args.planner == "llm" and not os.environ.get("DEEPSEEK_API_KEY", "").strip():
+        print("error: DEEPSEEK_API_KEY is required for --planner llm", file=sys.stderr)
+        return 2
     try:
         case = FrozenCaseProvider().load(args.as_of_date)
     except (UnsupportedCaseError, ValidationError, OSError, ValueError) as exc:

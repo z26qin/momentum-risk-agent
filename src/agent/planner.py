@@ -169,7 +169,7 @@ class LLMPlanner:
         allowed_tools: Sequence[str] | None = None,
     ) -> None:
         self.api_key = (api_key or os.environ.get("DEEPSEEK_API_KEY") or "").strip()
-        self.model = model or os.environ.get("DEEPSEEK_MODEL") or "deepseek-chat"
+        self.model = model or os.environ.get("DEEPSEEK_MODEL") or "deepseek-v4-flash"
         self.base_url = (
             base_url
             or os.environ.get("DEEPSEEK_BASE_URL")
@@ -204,8 +204,9 @@ class LLMPlanner:
                     },
                 ],
                 base_url=self.base_url,
-                temperature=0.1,
+                temperature=0.0,
                 timeout_seconds=timeout,
+                max_tokens=800,
             )
         except Exception as exc:  # noqa: BLE001
             raise TimeoutError(f"planner transport failed: {exc}") from exc
@@ -226,6 +227,6 @@ def resolve_planner(
     if planner is not None:
         return planner
     key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
-    if use_llm is not False and key:
+    if use_llm is True or (use_llm is None and key):
         return LLMPlanner(api_key=key, focus=focus, allowed_tools=allowed_tools)
     return HeuristicPlanner(focus=focus)

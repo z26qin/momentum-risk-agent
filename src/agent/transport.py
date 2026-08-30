@@ -9,15 +9,7 @@ from typing import Any
 
 def extract_json_object(content: str) -> dict[str, Any]:
     text = str(content or "").strip()
-    if text.startswith("```"):
-        lines = text.splitlines()[1:]
-        if lines and lines[-1].strip().startswith("```"):
-            lines.pop()
-        text = "\n".join(lines).strip()
-    start, end = text.find("{"), text.rfind("}")
-    if start < 0 or end < start:
-        raise ValueError("response did not contain a JSON object")
-    payload = json.loads(text[start : end + 1])
+    payload = json.loads(text)
     if not isinstance(payload, dict):
         raise ValueError("planner response must be a JSON object")
     return payload
@@ -31,9 +23,18 @@ def post_chat_completion(
     base_url: str,
     temperature: float,
     timeout_seconds: float,
+    max_tokens: int,
 ) -> str:
     body = json.dumps(
-        {"model": model, "messages": messages, "temperature": temperature}
+        {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "response_format": {"type": "json_object"},
+            "thinking": {"type": "disabled"},
+            "stream": False,
+        }
     ).encode("utf-8")
     request = urllib.request.Request(
         base_url.rstrip("/") + "/chat/completions",
@@ -46,4 +47,17 @@ def post_chat_completion(
     )
     with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
         payload = json.loads(response.read().decode("utf-8"))
-    return str(payload["choices"][0]["message"]["content"])
+    choices = payload.get("choices") if isinstance(payload, dict) else None
+    if not isinstance(choices, list) or not choices:
+        raise ValueError("DeepSeek response did not contain a completion choice")
+    choice = choices[0]
+    if not isinstance(choice, dict):
+        raise ValueError("DeepSeek completion choice was malformed")
+    finish_reason = choice.get("finish_reason")
+    if finish_reason != "stop":
+        raise ValueError(f"DeepSeek finish_reason was {finish_reason!r}, expected 'stop'")
+    message = choice.get("message")
+    content = message.get("content") if isinstance(message, dict) else None
+    if not isinstance(content, str) or not content.strip():
+        raise ValueError("DeepSeek response content was empty")
+    return content

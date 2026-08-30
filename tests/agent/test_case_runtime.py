@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import os
+import sys
+
 import pytest
 from pydantic import ValidationError
 
+from scripts import run_agent as cli
 from scripts.run_agent import _build_parser
 from src.agent.loop import run_agent
 from src.agent.models import AgentDecision, ToolCall
@@ -116,3 +120,45 @@ def test_cli_parser_has_one_execution_path() -> None:
     with pytest.raises(SystemExit):
         parser.parse_args(["--mode", "single"])
 
+
+def test_cli_loads_local_deepseek_env_before_planner_selection(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    (tmp_path / ".env").write_text(
+        'DEEPSEEK_API_KEY=""\nDEEPSEEK_MODEL="deepseek-v4-pro"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "__test_cleanup_sentinel__")
+    monkeypatch.setenv("DEEPSEEK_MODEL", "__test_cleanup_sentinel__")
+    monkeypatch.delenv("DEEPSEEK_API_KEY")
+    monkeypatch.delenv("DEEPSEEK_MODEL")
+    monkeypatch.setattr(cli, "ROOT", tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["run_agent.py", "--as-of-date", "2024-01-05", "--planner", "heuristic"],
+    )
+
+    assert cli.main() == 0
+    assert os.environ["DEEPSEEK_API_KEY"] == ""
+    assert os.environ["DEEPSEEK_MODEL"] == "deepseek-v4-pro"
+    assert "Current read" in capsys.readouterr().out
+
+
+def test_cli_explicit_llm_mode_rejects_an_empty_api_key(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    (tmp_path / ".env").write_text('DEEPSEEK_API_KEY=""\n', encoding="utf-8")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "__test_cleanup_sentinel__")
+    monkeypatch.delenv("DEEPSEEK_API_KEY")
+    monkeypatch.setattr(cli, "ROOT", tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["run_agent.py", "--as-of-date", "2026-05-29", "--planner", "llm"],
+    )
+
+    assert cli.main() == 2
+    captured = capsys.readouterr()
+    assert "DEEPSEEK_API_KEY" in captured.err
+    assert "Current read" not in captured.out

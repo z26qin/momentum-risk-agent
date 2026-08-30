@@ -47,8 +47,31 @@ Expected routing:
 | `2020-03-24` | recovery specialist |
 
 `--planner auto` uses DeepSeek when `DEEPSEEK_API_KEY` is present and otherwise
-uses the fail-closed heuristic planner. `DEEPSEEK_MODEL` and
-`DEEPSEEK_BASE_URL` remain optional overrides.
+uses the fail-closed heuristic planner.
+
+### DeepSeek planner
+
+The CLI loads DeepSeek settings from the ignored local `.env` file without
+overriding values already exported by the shell:
+
+```dotenv
+DEEPSEEK_API_KEY="your-key"
+# Optional defaults:
+# DEEPSEEK_MODEL="deepseek-v4-flash"
+# DEEPSEEK_BASE_URL="https://api.deepseek.com"
+```
+
+Then run an explicit LLM investigation:
+
+```bash
+uv run python scripts/run_agent.py --as-of-date 2026-05-29 --planner llm --verbose
+```
+
+The planner calls DeepSeek's `/chat/completions` endpoint in non-thinking JSON
+mode with an 800-token output cap. Every response must be one complete JSON
+object that validates as an `AgentDecision`; empty, truncated, wrapped, or
+malformed responses stop the specialist without executing unvalidated calls.
+`DEEPSEEK_MODEL` and `DEEPSEEK_BASE_URL` remain optional overrides.
 
 ## Public API
 

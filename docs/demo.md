@@ -25,3 +25,11 @@ uv run python scripts/run_agent.py --as-of-date 2020-03-24 --planner heuristic -
 
 Use `--save-trace agent_traces/<name>.json` to inspect routing, structured
 decisions, tool observations, errors, stop reasons, and calibrated output.
+
+## DeepSeek planner
+
+Set `DEEPSEEK_API_KEY` in the repository's ignored `.env`, then replace
+`--planner heuristic` with `--planner llm`. The default model is
+`deepseek-v4-flash`; `DEEPSEEK_MODEL` can select another compatible DeepSeek
+chat model. Use `--planner auto` to select DeepSeek only when the key is
+non-empty and otherwise retain deterministic heuristic planning.
