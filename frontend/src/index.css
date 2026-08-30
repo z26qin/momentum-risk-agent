@@ -1,0 +1,71 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #0f1317;
+  --color-panel: #151a20;
+  --color-line: #29323d;
+  --color-muted: #8b95a1;
+  --color-ink: #e9e4d8;
+  --color-amber: #d9a03f;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --font-grot: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --font-serif: "Newsreader", Georgia, serif;
+}
+
+@layer base {
+  * { box-sizing: border-box; }
+  body { margin: 0; min-width: 320px; background: var(--color-bg); color: var(--color-ink); font-family: var(--font-grot); -webkit-font-smoothing: antialiased; }
+  button { font: inherit; }
+  :focus-visible { outline: 2px solid var(--color-amber); outline-offset: 2px; }
+}
+
+@layer components {
+  .app-header { @apply flex flex-col lg:flex-row lg:items-center justify-between gap-4 px-5 lg:px-7 py-4 border-b border-line; }
+  .app-kicker { @apply block font-grot text-[10px] tracking-[0.18em] uppercase text-muted mt-1; }
+  .case-tabs { @apply flex flex-wrap gap-2; }
+  .case-tab { @apply border border-line px-3.5 py-2 font-mono text-[11px] text-muted bg-transparent cursor-pointer transition-colors; }
+  .case-tab:hover { @apply border-muted text-ink; }
+  .case-tab-active { @apply border-amber bg-panel text-ink; }
+  .header-meta { @apply flex flex-col lg:items-end font-mono text-[10px] text-muted gap-1; }
+  .console-grid { @apply flex-1 grid grid-cols-1 lg:grid-cols-[356px_minmax(380px,1fr)_420px] items-stretch; }
+  .panel-shell { @apply bg-panel border-line p-5 pb-7 flex flex-col gap-6 min-w-0; }
+  .panel-title-row, .section-heading-row { @apply flex items-baseline justify-between gap-3; }
+  .panel-title { @apply font-grot text-[11px] font-semibold tracking-[0.16em] uppercase m-0; }
+  .section-heading { @apply font-grot text-[10px] tracking-[0.14em] uppercase text-muted; }
+  .microcopy, .empty-copy { @apply font-mono text-[10px] text-muted; }
+  .mono-value { @apply font-mono text-[11px] text-ink; }
+  .stack { @apply flex flex-col gap-3; }
+  .stack-tight { @apply flex flex-col gap-2; }
+  .tag-list { @apply flex flex-wrap gap-1.5; }
+  .tag { @apply border border-line px-1.5 py-1 font-mono text-[9px] text-muted; }
+  .tag-hot { @apply border-amber text-amber; }
+  .mechanism-row { @apply flex justify-between items-center gap-3 p-2.5 border border-line bg-bg; }
+  .status-chip { @apply border px-1.5 py-1 font-mono text-[9px] tracking-wide uppercase whitespace-nowrap; }
+  .metric-row { @apply flex justify-between gap-3 font-mono text-[10px] text-muted border-b border-line pb-1.5; }
+  .severity-track { @apply relative h-3 border border-line bg-bg mt-2; background: linear-gradient(90deg, #24313b, #73582b 60%, #d9a03f); }
+  .severity-marker { @apply absolute -top-1.5 w-0.5 h-6 bg-ink; transform: translateX(-1px); }
+  .trace-placeholder { @apply min-h-[520px] p-5 lg:p-7 flex flex-col gap-6 bg-bg; }
+  .trace-summary { @apply flex-1 flex flex-col items-center justify-center gap-4 border border-line bg-panel/30; }
+  .trace-orbit { @apply w-20 h-20 rounded-full border border-amber flex items-center justify-center font-mono text-2xl text-amber; box-shadow: 0 0 40px rgba(217,160,63,.12); }
+  .bucket-label { @apply self-start font-grot text-[10px] tracking-[0.14em] uppercase text-muted; }
+  .bucket-label-inverted { @apply bg-ink text-bg px-2 py-0.5 font-semibold; }
+  .bucket { @apply flex flex-col gap-1.5 p-2.5; }
+  .bucket-solid { @apply p-0; }
+  .bucket-outlined { @apply border border-line; }
+  .bucket-inverted { @apply bg-ink text-bg; }
+  .bucket-dashed { @apply border border-dashed border-line text-muted; }
+  .bucket-item { @apply flex gap-2.5 items-start font-serif text-sm leading-relaxed; }
+  .bucket-dot { @apply w-[7px] h-[7px] shrink-0 mt-[7px]; }
+  .bucket-dot-solid { @apply bg-ink; }
+  .bucket-dot-outlined { @apply border border-ink; }
+  .bucket-dot-inverted { @apply bg-bg; }
+  .bucket-dot-dashed { @apply border border-dashed border-muted; }
+  .note-copy { @apply font-serif text-sm leading-relaxed m-0; }
+  .citation { @apply flex gap-2 items-baseline font-mono text-[10px] text-muted leading-relaxed; }
+  .app-footer { @apply flex flex-col sm:flex-row justify-between gap-2 px-5 lg:px-7 py-2.5 border-t border-line font-mono text-[10px] text-muted; }
+  .load-state { @apply min-h-screen flex items-center justify-center bg-bg text-muted font-mono text-sm; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
