@@ -96,4 +96,3 @@ def test_case_registry_contains_only_specialist_union() -> None:
         "inspect_name",
     }
     assert registry.get("search_filings") is None
-
