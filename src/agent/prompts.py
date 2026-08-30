@@ -48,27 +48,6 @@ inspect_name requires {{"symbol": "TICKER"}}.
 compare_prior_state accepts {{"prior_date": "YYYY-MM-DD"}} or {{}}.
 """
 
-COMPACT_RISK_KEYS = (
-    "as_of_date",
-    "overall_risk_state",
-    "deterministic_trigger_count",
-    "triggered_channels",
-    "structural_flags",
-    "supported_mechanisms",
-    "unconfirmed_mechanisms",
-    "mechanical_unwind_state",
-    "primary_driver",
-    "theme_cluster",
-    "pm_posture",
-    "book_read",
-    "score_label",
-    "monitoring_severity_score",
-    "score_is_probability",
-    "why_not_act_yet",
-    "next_checks",
-)
-
-
 def planner_system_prompt(focus: str | None = None) -> str:
     spec = BY_FOCUS.get(focus or "")
     return PLANNER_SYSTEM if spec is None else PLANNER_SYSTEM + "\n" + spec.addendum
@@ -81,8 +60,21 @@ def compact_planner_view(
     focus: str | None = None,
 ) -> dict[str, Any]:
     risk = state.risk_state
-    compact_risk = {key: risk.get(key) for key in COMPACT_RISK_KEYS}
-    compact_risk["score_is_probability"] = False
+    compact_risk = {
+        "as_of_date": risk.as_of_date.isoformat(),
+        "assessment_cutoff": risk.assessment_cutoff.isoformat(),
+        "market_regime": risk.market_regime,
+        "mechanical_unwind_state": risk.mechanical_unwind_state,
+        "monitoring_trigger_count": risk.monitoring_trigger_count,
+        "total_signal_count": risk.total_signal_count,
+        "triggered_signals": list(risk.triggered_signals),
+        "structural_flags": list(risk.structural_flags),
+        "mechanisms": risk.mechanisms.model_dump(),
+        "theme_cluster": list(risk.theme_cluster),
+        "book": risk.book.model_dump(mode="json"),
+        "severity": risk.severity.model_dump(mode="json"),
+        "score_is_probability": False,
+    }
     tools = list(allowed_tools) if allowed_tools is not None else list(TOOL_NAMES)
     return {
         "risk_state": compact_risk,

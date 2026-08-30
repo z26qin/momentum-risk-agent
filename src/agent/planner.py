@@ -8,15 +8,18 @@ from typing import Any, Mapping, Protocol
 
 from src.agent.models import AgentDecision, MalformedPlannerOutput, ToolCall
 from src.agent.prompts import format_planner_user, planner_system_prompt
-from src.agent.specialists import QUIET_READ, finish_text_for
-from src.agent.state import AgentState
-from src.agent_prompts import (
-    MECHANISM_QUERIES,
+from src.agent.signals import (
     crowding_signal_present,
     no_meaningful_risk_signal,
     recovery_setup_present,
-    want_fundamentals,
 )
+from src.agent.specialists import QUIET_READ, finish_text_for
+from src.agent.state import AgentState
+
+MECHANISM_QUERIES = {
+    "kl_crowding": "crowded hedge-fund positioning unwind deleveraging",
+    "dm_recovery": "market recovery loser rebound short-leg pain volatility",
+}
 
 
 class Planner(Protocol):
@@ -87,15 +90,6 @@ class HeuristicPlanner:
             decision = _recovery_step(self.focus, called)
             if decision is not None:
                 return decision
-        if self.focus is None and want_fundamentals(state) and "search_filings" not in called:
-            return AgentDecision(
-                action="call_tools",
-                hypothesis="fundamental deterioration",
-                reason="check bundled filings/earnings for the book names",
-                tool_calls=[
-                    ToolCall(id="s-filings", name="search_filings", args={"query": MECHANISM_QUERIES["fundamentals"]}),
-                ],
-            )
         return AgentDecision(
             action="finish",
             hypothesis=state.investigated_hypotheses[-1] if state.investigated_hypotheses else "ordinary noise",
@@ -118,7 +112,7 @@ def _crowding_step(state: AgentState, called: set[str]) -> AgentDecision | None:
                 ToolCall(id="s1-news", name="search_news", args={"query": query}),
             ],
         )
-    cluster = [str(item).upper() for item in (state.risk_state.get("theme_cluster") or [])]
+    cluster = list(state.risk_state.theme_cluster)
     if "inspect_name" not in called and cluster:
         return AgentDecision(
             action="call_tools",
@@ -190,13 +184,10 @@ class LLMPlanner:
     def decide(self, state: AgentState) -> AgentDecision:
         if not self.api_key and self.transport is None:
             raise MalformedPlannerOutput("DEEPSEEK_API_KEY is not set")
-        from src.evidence.deepseek_explainer import (
-            _extract_json_object,
-            _post_chat_completion,
-        )
+        from src.agent.transport import extract_json_object, post_chat_completion
 
         timeout = min(self.timeout_seconds, max(0.5, state.remaining_seconds))
-        post = self.transport or _post_chat_completion
+        post = self.transport or post_chat_completion
         try:
             content = post(
                 api_key=self.api_key or "test",
@@ -219,7 +210,7 @@ class LLMPlanner:
         except Exception as exc:  # noqa: BLE001
             raise TimeoutError(f"planner transport failed: {exc}") from exc
         try:
-            parsed = _extract_json_object(content)
+            parsed = extract_json_object(content)
         except Exception as exc:  # noqa: BLE001
             raise MalformedPlannerOutput(f"planner output was not JSON: {exc}") from exc
         return parsed

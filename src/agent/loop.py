@@ -1,16 +1,11 @@
-"""Bounded planner → executor investigation loop.
-
-Model plans. Executor enforces permissions, validation, timeouts, dedup,
-cutoff, and termination. The quantitative risk snapshot is never written.
-"""
+"""Bounded planner → executor investigation loop."""
 
 from __future__ import annotations
 
-import copy
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Any, Callable, Mapping, get_args
+from typing import Any, Callable, get_args
 
 from pydantic import ValidationError
 
@@ -23,12 +18,11 @@ from src.agent.models import (
     ToolObservation,
 )
 from src.agent.planner import Planner, resolve_planner
-from src.agent.report import build_pm_note, calibrated_buckets, sanitize_text
-from src.agent.state import AgentState, freeze_risk_state, risk_cutoff
-from src.mvp.config import HISTORICAL_EXAMPLE_DATE
+from src.agent.state import AgentState
+from src.agent.synthesis import build_pm_note, calibrated_buckets, sanitize_text
+from src.risk_state.models import InvestigationCase, RiskState
 from src.tools.context import ToolContext
 from src.tools.registry import ToolRegistry, default_registry
-from src.utils.io import DEFAULT_PROCESSED_DIR
 
 MAX_STEPS = 6
 OVERALL_DEADLINE_SECONDS = 10.0
@@ -42,7 +36,7 @@ class AgentRunResult:
     stop_reason: str
     report: str
     trace: AgentRunTrace
-    risk_state: dict[str, Any]
+    risk_state: RiskState
     observations: tuple[ToolObservation, ...]
     state: AgentState
     planner_kind: str
@@ -57,38 +51,18 @@ def parse_decision(raw: Any) -> AgentDecision:
         raise MalformedPlannerOutput(str(exc)) from exc
 
 
-def prepare_risk_snapshot(
-    as_of_date: str,
-    *,
-    risk_state: Mapping[str, Any] | None = None,
-    mvp_result: Any | None = None,
-) -> tuple[dict[str, Any], str, str, str]:
-    frozen, fingerprint = freeze_risk_state(
-        _load_risk_state(as_of_date, risk_state=risk_state, mvp_result=mvp_result)
-    )
-    date = str(frozen.get("as_of_date") or as_of_date)
-    return frozen, fingerprint, date, risk_cutoff(frozen, as_of_date)
-
-
 def run_agent(
-    as_of_date: str = HISTORICAL_EXAMPLE_DATE,
+    case: InvestigationCase,
     max_steps: int = MAX_STEPS,
     *,
     overall_deadline_seconds: float = OVERALL_DEADLINE_SECONDS,
-    risk_state: Mapping[str, Any] | None = None,
-    prior_state: Mapping[str, Any] | None = None,
-    mvp_result: Any | None = None,
     planner: Planner | None = None,
     registry: ToolRegistry | None = None,
     use_llm: bool | None = None,
     monotonic: Monotonic = time.monotonic,
-    processed_dir=DEFAULT_PROCESSED_DIR,
     focus: str | None = None,
     run_id: str | None = None,
 ) -> AgentRunResult:
-    frozen, fingerprint, date, cutoff = prepare_risk_snapshot(
-        as_of_date, risk_state=risk_state, mvp_result=mvp_result
-    )
     run_id = run_id or uuid.uuid4().hex[:12]
     tools = registry or default_registry()
     selected = resolve_planner(
@@ -99,35 +73,21 @@ def run_agent(
     )
     deadline = float(overall_deadline_seconds)
     state = AgentState(
-        as_of_date=date,
-        assessment_cutoff=cutoff,
+        case=case,
         run_id=run_id,
         max_steps=max(1, int(max_steps)),
         overall_deadline_seconds=deadline,
         remaining_seconds=deadline,
-        _risk_state=frozen,
-        _risk_fingerprint=fingerprint,
-        prior_state=copy.deepcopy(dict(prior_state)) if prior_state is not None else None,
         focus=focus,
     )
-    ctx = ToolContext(
-        as_of_date=state.as_of_date,
-        assessment_cutoff=state.assessment_cutoff,
-        risk_state=state._risk_state,
-        prior_state=state.prior_state,
-        processed_dir=processed_dir,
+    _run_loop(
+        state,
+        planner=selected,
+        executor=Executor(tools, monotonic=monotonic),
+        ctx=ToolContext.from_case(case),
+        monotonic=monotonic,
+        started=monotonic(),
     )
-    try:
-        _run_loop(
-            state,
-            planner=selected,
-            executor=Executor(tools, monotonic=monotonic),
-            ctx=ctx,
-            monotonic=monotonic,
-            started=monotonic(),
-        )
-    finally:
-        state.assert_risk_unchanged()
     report = build_pm_note(state)
     return AgentRunResult(
         run_id=run_id,
@@ -135,7 +95,7 @@ def run_agent(
         stop_reason=state.stop_reason or "MAX_STEPS",
         report=report,
         trace=_build_trace(state, selected.kind, report),
-        risk_state=state.risk_state,
+        risk_state=case.risk_state,
         observations=tuple(state.observations),
         state=state,
         planner_kind=selected.kind,
@@ -173,7 +133,7 @@ def _run_loop(
         state.step += 1
         state.decisions.append(decision)
         state.last_decision = decision
-        if decision.hypothesis and decision.hypothesis not in state.investigated_hypotheses:
+        if decision.hypothesis not in state.investigated_hypotheses:
             state.investigated_hypotheses.append(decision.hypothesis)
         for question in decision.open_questions:
             if question not in state.open_questions:
@@ -197,18 +157,16 @@ def _ingest_evidence(state: AgentState, batch: list[ToolObservation]) -> None:
     for observation in batch:
         if observation.status != "ok" or not isinstance(observation.payload, dict):
             continue
-        for doc in observation.payload.get("documents") or []:
-            if not isinstance(doc, dict):
+        for document in observation.payload.get("documents") or []:
+            if not isinstance(document, dict):
                 continue
-            key = (doc.get("evidence_id"), doc.get("headline"))
-            if key in seen:
-                continue
-            state.evidence.append(doc)
-            seen.add(key)
-        discarded = int(observation.discarded_post_cutoff or 0)
-        if discarded:
+            key = (document.get("evidence_id"), document.get("headline"))
+            if key not in seen:
+                state.evidence.append(document)
+                seen.add(key)
+        if observation.discarded_post_cutoff:
             state.errors.append(
-                f"{observation.name} rejected {discarded} post-cutoff document(s)"
+                f"{observation.name} rejected {observation.discarded_post_cutoff} post-cutoff document(s)"
             )
 
 
@@ -239,9 +197,7 @@ def _build_trace(state: AgentState, planner_kind: str, report: str) -> AgentRunT
         planner_kind=planner_kind,
         decisions=[item.model_dump() for item in state.decisions],
         tool_calls=[
-            call.model_dump()
-            for decision in state.decisions
-            for call in decision.tool_calls
+            call.model_dump() for decision in state.decisions for call in decision.tool_calls
         ],
         tool_results=[item.model_dump() for item in state.observations],
         errors=list(state.errors),
@@ -252,20 +208,3 @@ def _build_trace(state: AgentState, planner_kind: str, report: str) -> AgentRunT
         ),
         calibrated=calibrated_buckets(state),
     )
-
-
-def _load_risk_state(
-    as_of_date: str,
-    *,
-    risk_state: Mapping[str, Any] | None,
-    mvp_result: Any | None,
-) -> dict[str, Any]:
-    if risk_state is not None:
-        return copy.deepcopy(dict(risk_state))
-    if mvp_result is not None:
-        from src.mvp.hermes_monitor import compact_assessment_from_result
-
-        return compact_assessment_from_result(mvp_result)
-    from src.mvp.hermes_monitor import run_compact_assessment
-
-    return run_compact_assessment(as_of_date=as_of_date)

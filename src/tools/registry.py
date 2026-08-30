@@ -39,13 +39,6 @@ class CompareArgs(BaseModel):
     prior_date: str | None = None
 
 
-class FilingArgs(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    query: str = Field(min_length=1)
-    symbol: str | None = None
-
-
 @dataclass(frozen=True)
 class ToolSpec:
     name: str
@@ -98,71 +91,7 @@ class ToolRegistry:
 
 
 def default_registry() -> ToolRegistry:
-    from src.tools import evidence, market, portfolio
-
-    return ToolRegistry(
-        [
-            ToolSpec(
-                "get_book_state",
-                EmptyArgs,
-                portfolio.get_book_state,
-                timeout_seconds=2.0,
-                description="Deterministic current PM-book risk state",
-            ),
-            ToolSpec(
-                "get_factor_state",
-                EmptyArgs,
-                market.get_factor_state,
-                timeout_seconds=2.0,
-                description="UMD / regime / recovery state",
-            ),
-            ToolSpec(
-                "get_cluster_exposure",
-                EmptyArgs,
-                portfolio.get_cluster_exposure,
-                timeout_seconds=2.0,
-                description="Concentration / theme / long-short pressure",
-            ),
-            ToolSpec(
-                "compare_prior_state",
-                CompareArgs,
-                market.compare_prior_state,
-                timeout_seconds=2.0,
-                description="Compare current compact state with a previous date",
-            ),
-            ToolSpec(
-                "search_news",
-                SearchArgs,
-                evidence.search_news,
-                timeout_seconds=TOOL_TIMEOUT_SECONDS,
-                returns_evidence=True,
-                description="Point-in-time public news evidence",
-            ),
-            ToolSpec(
-                "search_positioning",
-                SearchArgs,
-                evidence.search_positioning,
-                timeout_seconds=TOOL_TIMEOUT_SECONDS,
-                returns_evidence=True,
-                description="Crowding / positioning evidence from bundled sources",
-            ),
-            ToolSpec(
-                "search_filings",
-                FilingArgs,
-                evidence.search_filings,
-                timeout_seconds=TOOL_TIMEOUT_SECONDS,
-                returns_evidence=True,
-                description="Local filings / earnings evidence if bundled",
-            ),
-            ToolSpec(
-                "inspect_name",
-                InspectArgs,
-                portfolio.inspect_name,
-                timeout_seconds=3.0,
-                description="Drill into one ticker against the book and cluster",
-            ),
-        ]
-    )
+    return case_registry()
 
 
 def case_registry() -> ToolRegistry:
