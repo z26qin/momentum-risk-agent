@@ -1,0 +1,701 @@
+{
+  "cases": [
+    {
+      "date": "2020-03-24",
+      "elapsed_seconds": 0.0,
+      "note": {
+        "citations": [
+          "[M20-2020-001] 2020-03-15 Federal Reserve Actions to Support the Flow of Credit to Households and Businesses",
+          "[M20-2020-003] 2020-03-17 Federal Reserve establishes a Primary Dealer Credit Facility",
+          "[M20-2020-005] 2020-03-23 Federal Reserve announces extensive new measures to support the economy"
+        ],
+        "contradicted": [
+          "None"
+        ],
+        "current_read": "Recovery risk is present; the evidence remains an investigation, not a crash call.",
+        "inferred": [
+          "Deterministic recovery conditions and short-leg pain are present.",
+          "Cutoff-valid policy evidence supports a recovery backdrop.",
+          "Working hypothesis: recovery-driven reversal",
+          "Recovery conditions were investigated. This remains an interpretation of the deterministic state, not a crash call."
+        ],
+        "next_useful_check": "Are losers rebounding broadly versus prior winners?",
+        "not_confirmed": [
+          "Direct confirmation of a broad loser-basket rebound"
+        ],
+        "observed": [
+          "3 / 4 deterministic signals triggered",
+          "mechanical unwind state: FRAGILITY_BUILDING",
+          "triggered signals: high_volatility_recovery, short_minus_long_beta_gap, short_loss_in_recovery",
+          "structural flags: portfolio_concentration",
+          "factor/regime: panic_elevated; score_is_probability=False",
+          "search_news: [M20-2020-001] 2020-03-15 Federal Reserve Actions to Support the Flow of Credit to Households and Businesses"
+        ],
+        "score_is_probability": false,
+        "what_changed": "- market_regime: normal → panic_elevated\n- mechanical_unwind_state: NORMAL → FRAGILITY_BUILDING\n- bear_market_recovery_crash: watch → triggered\n- short_book_reversal_crash: not_confirmed → watch\n- triggered_signals: [] → ['high_volatility_recovery', 'short_minus_long_beta_gap', 'short_loss_in_recovery']"
+      },
+      "risk_state": {
+        "as_of_date": "2020-03-24",
+        "assessment_cutoff": "2020-03-24T16:00:00-04:00",
+        "book": {
+          "long_beta_126d": 1.2377174550836794,
+          "portfolio_drawdown": -0.04819865862548389,
+          "short_loss_in_recovery": 0.40287442357217884,
+          "short_underlying_beta_126d": 1.2931364485834185
+        },
+        "comparison_date": "2020-02-28",
+        "market_regime": "panic_elevated",
+        "mechanical_unwind_state": "FRAGILITY_BUILDING",
+        "mechanisms": {
+          "bear_market_recovery_crash": "triggered",
+          "crowded_theme_unwind": "not_confirmed",
+          "short_book_reversal_crash": "watch"
+        },
+        "monitoring_trigger_count": 3,
+        "schema_version": "risk-state-v1",
+        "severity": {
+          "label": "high",
+          "mechanism_scores": {
+            "book_vulnerability": 100,
+            "crowded_unwind": 95,
+            "dm_recovery": 100,
+            "fundamental_repricing": null
+          },
+          "primary_driver": "dm_recovery",
+          "score": 100,
+          "score_is_probability": false
+        },
+        "structural_flags": [
+          "portfolio_concentration"
+        ],
+        "theme_cluster": [],
+        "total_signal_count": 4,
+        "triggered_mechanisms": [
+          "bear_market_recovery_crash"
+        ],
+        "triggered_signals": [
+          "high_volatility_recovery",
+          "short_minus_long_beta_gap",
+          "short_loss_in_recovery"
+        ],
+        "unconfirmed_mechanisms": [
+          "crowded_theme_unwind",
+          "short_book_reversal_crash"
+        ]
+      },
+      "schema_version": "investigation-console-v1",
+      "source": "export",
+      "trace": {
+        "combined_stop": "EVIDENCE_SUFFICIENT",
+        "errors": [],
+        "loop": [
+          {
+            "action": "spawn",
+            "attempts": null,
+            "discarded_post_cutoff": 0,
+            "error_message": null,
+            "error_type": null,
+            "hypothesis": null,
+            "kind": "route",
+            "planner_fallback": false,
+            "planner_kind": null,
+            "reason": "deterministic_mechanisms",
+            "sequence": 1,
+            "specialist": null,
+            "specialists": [
+              "recovery"
+            ],
+            "status": null,
+            "stop_reason": null,
+            "tool_call_id": null,
+            "tool_name": null
+          },
+          {
+            "action": "call_tools",
+            "attempts": null,
+            "discarded_post_cutoff": 0,
+            "error_message": null,
+            "error_type": null,
+            "hypothesis": "recovery-driven reversal",
+            "kind": "plan",
+            "planner_fallback": false,
+            "planner_kind": "heuristic-dm_recovery",
+            "reason": "DM recovery flags are present in the deterministic state",
+            "sequence": 2,
+            "specialist": "recovery",
+            "specialists": [],
+            "status": null,
+            "stop_reason": null,
+            "tool_call_id": null,
+            "tool_name": null
+          },
+          {
+            "action": null,
+            "attempts": 1,
+            "discarded_post_cutoff": 0,
+            "error_message": null,
+            "error_type": null,
+            "hypothesis": null,
+            "kind": "observe",
+            "planner_fallback": false,
+            "planner_kind": null,
+            "reason": null,
+            "sequence": 3,
+            "specialist": "recovery",
+            "specialists": [],
+            "status": "ok",
+            "stop_reason": null,
+            "tool_call_id": "s1-factor",
+            "tool_name": "get_factor_state"
+          },
+          {
+            "action": null,
+            "attempts": 1,
+            "discarded_post_cutoff": 0,
+            "error_message": null,
+            "error_type": null,
+            "hypothesis": null,
+            "kind": "observe",
+            "planner_fallback": false,
+            "planner_kind": null,
+            "reason": null,
+            "sequence": 4,
+            "specialist": "recovery",
+            "specialists": [],
+            "status": "ok",
+            "stop_reason": null,
+            "tool_call_id": "s1-dm-news",
+            "tool_name": "search_news"
+          },
+          {
+            "action": "call_tools",
+            "attempts": null,
+            "discarded_post_cutoff": 0,
+            "error_message": null,
+            "error_type": null,
+            "hypothesis": "recovery-driven reversal",
+            "kind": "plan",
+            "planner_fallback": false,
+            "planner_kind": "heuristic-dm_recovery",
+            "reason": "compare the current recovery snapshot with the loaded prior state",
+            "sequence": 5,
+            "specialist": "recovery",
+            "specialists": [],
+            "status": null,
+            "stop_reason": null,
+            "tool_call_id": null,
+            "tool_name": null
+          },
+          {
+            "action": null,
+            "attempts": 1,
+            "discarded_post_cutoff": 0,
+            "error_message": null,
+            "error_type": null,
+            "hypothesis": null,
+            "kind": "observe",
+            "planner_fallback": false,
+            "planner_kind": null,
+            "reason": null,
+            "sequence": 6,
+            "specialist": "recovery",
+            "specialists": [],
+            "status": "ok",
+            "stop_reason": null,
+            "tool_call_id": "s2-prior",
+            "tool_name": "compare_prior_state"
+          },
+          {
+            "action": "finish",
+            "attempts": null,
+            "discarded_post_cutoff": 0,
+            "error_message": null,
+            "error_type": null,
+            "hypothesis": "recovery-driven reversal",
+            "kind": "plan",
+            "planner_fallback": false,
+            "planner_kind": "heuristic-dm_recovery",
+            "reason": "EVIDENCE_SUFFICIENT",
+            "sequence": 7,
+            "specialist": "recovery",
+            "specialists": [],
+            "status": null,
+            "stop_reason": null,
+            "tool_call_id": null,
+            "tool_name": null
+          },
+          {
+            "action": null,
+            "attempts": null,
+            "discarded_post_cutoff": 0,
+            "error_message": null,
+            "error_type": null,
+            "hypothesis": null,
+            "kind": "stop",
+            "planner_fallback": false,
+            "planner_kind": "heuristic-dm_recovery",
+            "reason": null,
+            "sequence": 8,
+            "specialist": "recovery",
+            "specialists": [],
+            "status": null,
+            "stop_reason": "EVIDENCE_SUFFICIENT",
+            "tool_call_id": null,
+            "tool_name": null
+          },
+          {
+            "action": null,
+            "attempts": null,
+            "discarded_post_cutoff": 0,
+            "error_message": null,
+            "error_type": null,
+            "hypothesis": null,
+            "kind": "combine",
+            "planner_fallback": false,
+            "planner_kind": null,
+            "reason": null,
+            "sequence": 9,
+            "specialist": null,
+            "specialists": [
+              "recovery"
+            ],
+            "status": null,
+            "stop_reason": "EVIDENCE_SUFFICIENT",
+            "tool_call_id": null,
+            "tool_name": null
+          }
+        ],
+        "quiet": false,
+        "routed_specialists": [
+          "recovery"
+        ],
+        "schedule": "parallel_shared_deadline",
+        "specialists": [
+          {
+            "name": "recovery",
+            "planner_fallback": false,
+            "planner_kind": "heuristic-dm_recovery",
+            "steps": 3,
+            "stop_reason": "EVIDENCE_SUFFICIENT"
+          }
+        ]
+      }
+    },
+    {
+      "date": "2024-01-05",
+      "elapsed_seconds": 0.0,
+      "note": {
+        "citations": [
+          "None"
+        ],
+        "contradicted": [
+          "None"
+        ],
+        "current_read": "The deterministic state does not justify additional evidence search. Continue ordinary monitoring.",
+        "inferred": [
+          "No inference beyond the deterministic state."
+        ],
+        "next_useful_check": "Continue ordinary monitoring of breadth, liquidity, and concentrated names.",
+        "not_confirmed": [
+          "None"
+        ],
+        "observed": [
+          "0 / 4 deterministic signals triggered",
+          "mechanical unwind state: NORMAL"
+        ],
+        "score_is_probability": false,
+        "what_changed": "No prior deterministic state is bundled."
+      },
+      "risk_state": {
+        "as_of_date": "2024-01-05",
+        "assessment_cutoff": "2024-01-05T16:00:00-05:00",
+        "book": {
+          "long_beta_126d": 2.0487564426911162,
+          "portfolio_drawdown": -0.0902711157867091,
+          "short_loss_in_recovery": 0.2038585894990823,
+          "short_underlying_beta_126d": 1.5308314489469168
+        },
+        "comparison_date": null,
+        "market_regime": "bear_low_volatility",
+        "mechanical_unwind_state": "NORMAL",
+        "mechanisms": {
+          "bear_market_recovery_crash": "watch",
+          "crowded_theme_unwind": "not_confirmed",
+          "short_book_reversal_crash": "not_confirmed"
+        },
+        "monitoring_trigger_count": 0,
+        "schema_version": "risk-state-v1",
+        "severity": {
+          "label": "high",
+          "mechanism_scores": {
+            "book_vulnerability": 64,
+            "crowded_unwind": 82,
+            "dm_recovery": 52,
+            "fundamental_repricing": null
+          },
+          "primary_driver": "crowded_unwind",
+          "score": 82,
+          "score_is_probability": false
+        },
+        "structural_flags": [],
+        "theme_cluster": [],
+        "total_signal_count": 4,
+        "triggered_mechanisms": [],
+        "triggered_signals": [],
+        "unconfirmed_mechanisms": [
+          "bear_market_recovery_crash",
+          "crowded_theme_unwind",
+          "short_book_reversal_crash"
+        ]
+      },
+      "schema_version": "investigation-console-v1",
+      "source": "export",
+      "trace": {
+        "combined_stop": "NO_INVESTIGATION_NEEDED",
+        "errors": [],
+        "loop": [
+          {
+            "action": "skip",
+            "attempts": null,
+            "discarded_post_cutoff": 0,
+            "error_message": null,
+            "error_type": null,
+            "hypothesis": null,
+            "kind": "route",
+            "planner_fallback": false,
+            "planner_kind": null,
+            "reason": "NO_INVESTIGATION_NEEDED",
+            "sequence": 1,
+            "specialist": null,
+            "specialists": [],
+            "status": null,
+            "stop_reason": null,
+            "tool_call_id": null,
+            "tool_name": null
+          },
+          {
+            "action": null,
+            "attempts": null,
+            "discarded_post_cutoff": 0,
+            "error_message": null,
+            "error_type": null,
+            "hypothesis": null,
+            "kind": "combine",
+            "planner_fallback": false,
+            "planner_kind": null,
+            "reason": null,
+            "sequence": 2,
+            "specialist": null,
+            "specialists": [],
+            "status": null,
+            "stop_reason": "NO_INVESTIGATION_NEEDED",
+            "tool_call_id": null,
+            "tool_name": null
+          }
+        ],
+        "quiet": true,
+        "routed_specialists": [],
+        "schedule": "parallel_shared_deadline",
+        "specialists": []
+      }
+    },
+    {
+      "date": "2026-05-29",
+      "elapsed_seconds": 0.0,
+      "note": {
+        "citations": [
+          "[CSU-2026-007] 2026-05-05 Arista Networks Reports First Quarter 2026 Financial Results"
+        ],
+        "contradicted": [
+          "None"
+        ],
+        "current_read": "Pressure is localized; broad forced deleveraging remains unconfirmed.",
+        "inferred": [
+          "Working hypothesis: forced deleveraging still unconfirmed",
+          "Localized crowding pressure is supported. Forced deleveraging and a book-wide unwind remain unconfirmed."
+        ],
+        "next_useful_check": "Is there evidence of broad deleveraging?",
+        "not_confirmed": [
+          "Broad forced deleveraging / financing stress"
+        ],
+        "observed": [
+          "0 / 4 deterministic signals triggered",
+          "mechanical unwind state: FRAGILITY_BUILDING",
+          "theme cluster: CIEN, COHR, LITE",
+          "structural flags: portfolio_concentration",
+          "cluster exposure: CIEN, COHR, LITE",
+          "search_news: [CSU-2026-007] 2026-05-05 Arista Networks Reports First Quarter 2026 Financial Results",
+          "CIEN in_cluster=True in_book=True leg=long"
+        ],
+        "score_is_probability": false,
+        "what_changed": "Frozen state is compared with 2026-04-30."
+      },
+      "risk_state": {
+        "as_of_date": "2026-05-29",
+        "assessment_cutoff": "2026-05-29T16:00:00-04:00",
+        "book": {
+          "long_beta_126d": 2.572822625616927,
+          "portfolio_drawdown": -0.07522682931760427,
+          "short_loss_in_recovery": 0.15507930926767552,
+          "short_underlying_beta_126d": 0.5050908492797432
+        },
+        "comparison_date": "2026-04-30",
+        "market_regime": "normal",
+        "mechanical_unwind_state": "FRAGILITY_BUILDING",
+        "mechanisms": {
+          "bear_market_recovery_crash": "watch",
+          "crowded_theme_unwind": "triggered",
+          "short_book_reversal_crash": "not_confirmed"
+        },
+        "monitoring_trigger_count": 0,
+        "schema_version": "risk-state-v1",
+        "severity": {
+          "label": "high",
+          "mechanism_scores": {
+            "book_vulnerability": 56,
+            "crowded_unwind": 96,
+            "dm_recovery": 45,
+            "fundamental_repricing": null
+          },
+          "primary_driver": "crowded_unwind",
+          "score": 96,
+          "score_is_probability": false
+        },
+        "structural_flags": [
+          "portfolio_concentration"
+        ],
+        "theme_cluster": [
+          "CIEN",
+          "COHR",
+          "LITE"
+        ],
+        "total_signal_count": 4,
+        "triggered_mechanisms": [
+          "crowded_theme_unwind"
+        ],
+        "triggered_signals": [],
+        "unconfirmed_mechanisms": [
+          "bear_market_recovery_crash",
+          "short_book_reversal_crash"
+        ]
+      },
+      "schema_version": "investigation-console-v1",
+      "source": "export",
+      "trace": {
+        "combined_stop": "EVIDENCE_SUFFICIENT",
+        "errors": [],
+        "loop": [
+          {
+            "action": "spawn",
+            "attempts": null,
+            "discarded_post_cutoff": 0,
+            "error_message": null,
+            "error_type": null,
+            "hypothesis": null,
+            "kind": "route",
+            "planner_fallback": false,
+            "planner_kind": null,
+            "reason": "deterministic_mechanisms",
+            "sequence": 1,
+            "specialist": null,
+            "specialists": [
+              "crowding"
+            ],
+            "status": null,
+            "stop_reason": null,
+            "tool_call_id": null,
+            "tool_name": null
+          },
+          {
+            "action": "call_tools",
+            "attempts": null,
+            "discarded_post_cutoff": 0,
+            "error_message": null,
+            "error_type": null,
+            "hypothesis": "localized crowded unwind",
+            "kind": "plan",
+            "planner_fallback": false,
+            "planner_kind": "heuristic-kl_crowding",
+            "reason": "cluster concentration may explain the pressure",
+            "sequence": 2,
+            "specialist": "crowding",
+            "specialists": [],
+            "status": null,
+            "stop_reason": null,
+            "tool_call_id": null,
+            "tool_name": null
+          },
+          {
+            "action": null,
+            "attempts": 1,
+            "discarded_post_cutoff": 0,
+            "error_message": null,
+            "error_type": null,
+            "hypothesis": null,
+            "kind": "observe",
+            "planner_fallback": false,
+            "planner_kind": null,
+            "reason": null,
+            "sequence": 3,
+            "specialist": "crowding",
+            "specialists": [],
+            "status": "ok",
+            "stop_reason": null,
+            "tool_call_id": "s1-cluster",
+            "tool_name": "get_cluster_exposure"
+          },
+          {
+            "action": null,
+            "attempts": 1,
+            "discarded_post_cutoff": 0,
+            "error_message": null,
+            "error_type": null,
+            "hypothesis": null,
+            "kind": "observe",
+            "planner_fallback": false,
+            "planner_kind": null,
+            "reason": null,
+            "sequence": 4,
+            "specialist": "crowding",
+            "specialists": [],
+            "status": "ok",
+            "stop_reason": null,
+            "tool_call_id": "s1-pos",
+            "tool_name": "search_positioning"
+          },
+          {
+            "action": null,
+            "attempts": 1,
+            "discarded_post_cutoff": 0,
+            "error_message": null,
+            "error_type": null,
+            "hypothesis": null,
+            "kind": "observe",
+            "planner_fallback": false,
+            "planner_kind": null,
+            "reason": null,
+            "sequence": 5,
+            "specialist": "crowding",
+            "specialists": [],
+            "status": "ok",
+            "stop_reason": null,
+            "tool_call_id": "s1-news",
+            "tool_name": "search_news"
+          },
+          {
+            "action": "call_tools",
+            "attempts": null,
+            "discarded_post_cutoff": 0,
+            "error_message": null,
+            "error_type": null,
+            "hypothesis": "forced deleveraging still unconfirmed",
+            "kind": "plan",
+            "planner_fallback": false,
+            "planner_kind": "heuristic-kl_crowding",
+            "reason": "drill into the concentrated long before stopping",
+            "sequence": 6,
+            "specialist": "crowding",
+            "specialists": [],
+            "status": null,
+            "stop_reason": null,
+            "tool_call_id": null,
+            "tool_name": null
+          },
+          {
+            "action": null,
+            "attempts": 1,
+            "discarded_post_cutoff": 0,
+            "error_message": null,
+            "error_type": null,
+            "hypothesis": null,
+            "kind": "observe",
+            "planner_fallback": false,
+            "planner_kind": null,
+            "reason": null,
+            "sequence": 7,
+            "specialist": "crowding",
+            "specialists": [],
+            "status": "ok",
+            "stop_reason": null,
+            "tool_call_id": "s2-name",
+            "tool_name": "inspect_name"
+          },
+          {
+            "action": "finish",
+            "attempts": null,
+            "discarded_post_cutoff": 0,
+            "error_message": null,
+            "error_type": null,
+            "hypothesis": "forced deleveraging still unconfirmed",
+            "kind": "plan",
+            "planner_fallback": false,
+            "planner_kind": "heuristic-kl_crowding",
+            "reason": "EVIDENCE_SUFFICIENT",
+            "sequence": 8,
+            "specialist": "crowding",
+            "specialists": [],
+            "status": null,
+            "stop_reason": null,
+            "tool_call_id": null,
+            "tool_name": null
+          },
+          {
+            "action": null,
+            "attempts": null,
+            "discarded_post_cutoff": 0,
+            "error_message": null,
+            "error_type": null,
+            "hypothesis": null,
+            "kind": "stop",
+            "planner_fallback": false,
+            "planner_kind": "heuristic-kl_crowding",
+            "reason": null,
+            "sequence": 9,
+            "specialist": "crowding",
+            "specialists": [],
+            "status": null,
+            "stop_reason": "EVIDENCE_SUFFICIENT",
+            "tool_call_id": null,
+            "tool_name": null
+          },
+          {
+            "action": null,
+            "attempts": null,
+            "discarded_post_cutoff": 0,
+            "error_message": null,
+            "error_type": null,
+            "hypothesis": null,
+            "kind": "combine",
+            "planner_fallback": false,
+            "planner_kind": null,
+            "reason": null,
+            "sequence": 10,
+            "specialist": null,
+            "specialists": [
+              "crowding"
+            ],
+            "status": null,
+            "stop_reason": "EVIDENCE_SUFFICIENT",
+            "tool_call_id": null,
+            "tool_name": null
+          }
+        ],
+        "quiet": false,
+        "routed_specialists": [
+          "crowding"
+        ],
+        "schedule": "parallel_shared_deadline",
+        "specialists": [
+          {
+            "name": "crowding",
+            "planner_fallback": false,
+            "planner_kind": "heuristic-kl_crowding",
+            "steps": 3,
+            "stop_reason": "EVIDENCE_SUFFICIENT"
+          }
+        ]
+      }
+    }
+  ],
+  "schema_version": "investigation-console-bundle-v1"
+}
