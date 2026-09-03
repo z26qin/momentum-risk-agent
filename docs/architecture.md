@@ -34,6 +34,12 @@ wall-clock budget but not a loop step. Scripted and heuristic planner failures
 remain fail-closed, and an empty explicit LLM configuration is rejected by the
 CLI before the agent starts.
 
+Optional LangSmith tracing is a sidecar over this same path. It records the
+orchestrator, specialist loops, DeepSeek planner calls, and executor batches
+without changing routing, fallback, retry, or cutoff behavior. Large
+`RiskState` objects are stripped from span payloads. Worker-thread specialists
+are attached to the parent orchestrator run explicitly.
+
 Tools project the frozen case or search its bundled evidence. Missing evidence,
 holdings, and prior states remain explicitly missing.
 

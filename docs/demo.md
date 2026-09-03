@@ -26,6 +26,10 @@ uv run python scripts/run_agent.py --as-of-date 2020-03-24 --planner heuristic -
 Use `--save-trace agent_traces/<name>.json` to inspect routing, structured
 decisions, tool observations, errors, stop reasons, and calibrated output.
 
+With `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY` in `.env`, the same CLI
+run also uploads a nested LangSmith trace. That is optional and independent of
+`--save-trace`.
+
 ## Console replay
 
 Export and open the browser console:

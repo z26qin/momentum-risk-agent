@@ -6,6 +6,8 @@ import json
 import urllib.request
 from typing import Any
 
+from src.agent.tracing import record_usage
+
 
 def extract_json_object(content: str) -> dict[str, Any]:
     text = str(content or "").strip()
@@ -60,4 +62,8 @@ def post_chat_completion(
     content = message.get("content") if isinstance(message, dict) else None
     if not isinstance(content, str) or not content.strip():
         raise ValueError("DeepSeek response content was empty")
+    if isinstance(payload, dict):
+        usage = payload.get("usage")
+        if isinstance(usage, dict):
+            record_usage(usage)
     return content

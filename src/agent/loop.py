@@ -20,6 +20,12 @@ from src.agent.models import (
 from src.agent.planner import HeuristicPlanner, Planner, resolve_planner
 from src.agent.state import AgentState
 from src.agent.synthesis import build_pm_note, calibrated_buckets, sanitize_text
+from src.agent.tracing import (
+    record_event,
+    specialist_inputs,
+    specialist_outputs,
+    traceable,
+)
 from src.risk_state.models import InvestigationCase, RiskState
 from src.tools.context import ToolContext
 from src.tools.registry import ToolRegistry, default_registry
@@ -51,6 +57,12 @@ def parse_decision(raw: Any) -> AgentDecision:
         raise MalformedPlannerOutput(str(exc)) from exc
 
 
+@traceable(
+    name="specialist_loop",
+    run_type="chain",
+    process_inputs=specialist_inputs,
+    process_outputs=specialist_outputs,
+)
 def run_agent(
     case: InvestigationCase,
     max_steps: int = MAX_STEPS,
@@ -138,6 +150,15 @@ def _run_loop(
                 label = "timeout" if isinstance(exc, TimeoutError) else "malformed output"
                 state.errors.append(
                     f"LLM planner {label}; falling back to heuristic: {exc}"
+                )
+                record_event(
+                    "planner_fallback",
+                    {
+                        "from": planner.kind,
+                        "to": fallback.kind,
+                        "reason": label,
+                        "error": str(exc),
+                    },
                 )
                 active = fallback
                 transitioned = True

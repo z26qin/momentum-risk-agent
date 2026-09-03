@@ -13,9 +13,10 @@ if str(ROOT) not in sys.path:
 
 from pydantic import ValidationError
 
-from src.agent.config import load_deepseek_env
+from src.agent.config import load_local_env
 from src.agent.loop import MAX_STEPS, OVERALL_DEADLINE_SECONDS
 from src.agent.orchestrator import run_orchestrated_investigation
+from src.agent.tracing import flush_traces
 from src.risk_state.provider import FrozenCaseProvider, UnsupportedCaseError
 
 DEFAULT_CASE_DATE = "2026-05-29"
@@ -42,7 +43,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
-    load_deepseek_env(ROOT / ".env")
+    load_local_env(ROOT / ".env")
     args = _build_parser().parse_args()
     if args.planner == "llm" and not os.environ.get("DEEPSEEK_API_KEY", "").strip():
         print("error: DEEPSEEK_API_KEY is required for --planner llm", file=sys.stderr)
@@ -72,6 +73,7 @@ def main() -> int:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(result.trace.model_dump_json(indent=2) + "\n", encoding="utf-8")
         print(f"# wrote {path}", file=sys.stderr)
+    flush_traces()
     return 0
 
 
