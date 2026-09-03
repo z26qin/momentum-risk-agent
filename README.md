@@ -97,6 +97,25 @@ its bounded heuristic planner; the transition is recorded in the trace. An
 explicit `--planner llm` still exits before orchestration when the key is empty.
 `DEEPSEEK_MODEL` and `DEEPSEEK_BASE_URL` remain optional overrides.
 
+### LangSmith tracing
+
+The agent does not use LangChain. Optional traces use the standalone `langsmith`
+SDK. Add the following to the ignored `.env` file (shell values still win):
+
+```dotenv
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY="lsv2_..."
+LANGSMITH_PROJECT="momentum-risk-agent"
+```
+
+`LANGCHAIN_TRACING_V2`, `LANGCHAIN_API_KEY`, and `LANGCHAIN_PROJECT` are also
+accepted. When tracing is on and no project is set, the CLI uses
+`momentum-risk-agent`. A complete run nests the orchestrator, each specialist
+loop, LLM planner calls (prompt, completion, tokens), and tool batches. Semantic
+duplicates and the one allowed tool retry show up as child spans or retry
+events. Concurrent specialists keep the orchestrator as their parent even though
+they run in worker threads. Tracing stays off unless the flag is set.
+
 ### Evidence resilience
 
 Cutoff-valid evidence is rendered in Observed and in one deduplicated

@@ -15,6 +15,13 @@ from src.agent.signals import (
 )
 from src.agent.specialists import QUIET_READ, finish_text_for
 from src.agent.state import AgentState
+from src.agent.tracing import (
+    llm_planner_inputs,
+    llm_planner_outputs,
+    parent_run,
+    planner_outputs,
+    traceable,
+)
 
 MECHANISM_QUERIES = {
     "kl_crowding": "crowded hedge-fund positioning unwind deleveraging",
@@ -181,6 +188,13 @@ class LLMPlanner:
         self.allowed_tools = tuple(allowed_tools) if allowed_tools is not None else None
         self.kind = f"llm-{focus}" if focus else "llm"
 
+    @traceable(
+        name="llm_planner_decide",
+        run_type="llm",
+        process_inputs=llm_planner_inputs,
+        process_outputs=llm_planner_outputs,
+        metadata={"ls_provider": "deepseek"},
+    )
     def decide(self, state: AgentState) -> AgentDecision:
         if not self.api_key and self.transport is None:
             raise MalformedPlannerOutput("DEEPSEEK_API_KEY is not set")
@@ -188,21 +202,33 @@ class LLMPlanner:
 
         timeout = min(self.timeout_seconds, max(0.5, state.remaining_seconds))
         post = self.transport or post_chat_completion
+        messages = [
+            {"role": "system", "content": planner_system_prompt(self.focus)},
+            {
+                "role": "user",
+                "content": format_planner_user(
+                    state,
+                    allowed_tools=self.allowed_tools,
+                    focus=self.focus,
+                ),
+            },
+        ]
+        run = parent_run()
+        if run is not None:
+            run.set(
+                inputs={"messages": messages, "model": self.model},
+                metadata={
+                    "ls_provider": "deepseek",
+                    "ls_model_name": self.model,
+                    "ls_temperature": 0.0,
+                    "ls_max_tokens": 800,
+                },
+            )
         try:
             content = post(
                 api_key=self.api_key or "test",
                 model=self.model,
-                messages=[
-                    {"role": "system", "content": planner_system_prompt(self.focus)},
-                    {
-                        "role": "user",
-                        "content": format_planner_user(
-                            state,
-                            allowed_tools=self.allowed_tools,
-                            focus=self.focus,
-                        ),
-                    },
-                ],
+                messages=messages,
                 base_url=self.base_url,
                 temperature=0.0,
                 timeout_seconds=timeout,
@@ -210,10 +236,18 @@ class LLMPlanner:
             )
         except Exception as exc:  # noqa: BLE001
             raise TimeoutError(f"planner transport failed: {exc}") from exc
+        if run is not None:
+            run.set(
+                outputs={
+                    "choices": [{"message": {"role": "assistant", "content": content}}],
+                }
+            )
         try:
             parsed = extract_json_object(content)
         except Exception as exc:  # noqa: BLE001
             raise MalformedPlannerOutput(f"planner output was not JSON: {exc}") from exc
+        if run is not None:
+            run.add_outputs({"decision": planner_outputs(parsed)})
         return parsed
 
 

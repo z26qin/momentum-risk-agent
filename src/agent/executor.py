@@ -17,6 +17,15 @@ from pydantic import ValidationError
 from src.agent.cutoff import published_by_cutoff
 from src.agent.models import AgentDecision, ToolCall, ToolObservation
 from src.agent.state import AgentState
+from src.agent.tracing import (
+    context_thread_pool,
+    executor_inputs,
+    executor_outputs,
+    log_tool_observation,
+    rename_current,
+    tool_span,
+    traceable,
+)
 from src.tools.context import ToolContext
 from src.tools.registry import MAX_PARALLEL_TOOLS, TOOL_RETRIES, ToolRegistry, default_registry
 
@@ -66,6 +75,25 @@ class Executor:
     ) -> list[ToolObservation]:
         if decision.action != "call_tools":
             return []
+        return self._execute_tool_batch(
+            decision, state, ctx, remaining_seconds=remaining_seconds
+        )
+
+    @traceable(
+        name="execute_tool_batch",
+        run_type="tool",
+        process_inputs=executor_inputs,
+        process_outputs=executor_outputs,
+    )
+    def _execute_tool_batch(
+        self,
+        decision: AgentDecision,
+        state: AgentState,
+        ctx: ToolContext,
+        *,
+        remaining_seconds: float,
+    ) -> list[ToolObservation]:
+        rename_current(f"execute_tool_batch step={state.step}")
         calls = list(decision.tool_calls)[:MAX_PARALLEL_TOOLS]
         prepared: list[tuple[ToolCall, dict[str, Any], Any, ToolObservation | None]] = []
         batch_keys: set[str] = set()
@@ -89,11 +117,20 @@ class Executor:
         ordered: list[ToolObservation] = []
         for call, args, _parsed, observation in prepared:
             if observation is not None:
+                log_tool_observation(observation)
                 ordered.append(observation)
                 continue
             result = executed_by_id.get(call.id)
             if result is None:
-                ordered.append(_error(call, args, "deadline", "deadline", "overall investigation deadline reached"))
+                missed = _error(
+                    call,
+                    args,
+                    "deadline",
+                    "deadline",
+                    "overall investigation deadline reached",
+                )
+                log_tool_observation(missed)
+                ordered.append(missed)
             else:
                 ordered.append(result)
         for item in ordered:
@@ -147,7 +184,7 @@ class Executor:
             return []
         workers = min(len(runnable), MAX_PARALLEL_TOOLS)
         observations: list[ToolObservation] = []
-        with ThreadPoolExecutor(max_workers=workers) as pool:
+        with context_thread_pool(max_workers=workers) as pool:
             futures = {}
             for call, args, parsed in runnable:
                 spec = self.registry.get(call.name)
@@ -221,23 +258,46 @@ class Executor:
         started = self.monotonic()
         attempts = 0
         last_error: BaseException | None = None
-        for attempt in range(1, TOOL_RETRIES + 2):
-            leftover = remaining_seconds - (self.monotonic() - started)
-            timeout = min(spec.timeout_seconds if spec else 0.0, max(0.0, leftover))
-            if timeout <= 0:
-                break
-            attempts = attempt
-            try:
-                payload, discarded, elapsed_ms = self._run_one(
-                    spec, ctx, parsed, timeout
-                )
-                return payload, discarded, elapsed_ms, attempts
-            except Exception as exc:  # noqa: BLE001 - retry only executed handlers
-                last_error = exc
-                if attempt > TOOL_RETRIES:
+        args = parsed.model_dump() if hasattr(parsed, "model_dump") else {}
+        with tool_span(getattr(spec, "name", "tool"), inputs={"args": args}) as run:
+            for attempt in range(1, TOOL_RETRIES + 2):
+                leftover = remaining_seconds - (self.monotonic() - started)
+                timeout = min(spec.timeout_seconds if spec else 0.0, max(0.0, leftover))
+                if timeout <= 0:
                     break
-        cause = last_error or TimeoutError("overall investigation deadline reached")
-        raise _ToolAttemptsExhausted(cause, max(1, attempts))
+                attempts = attempt
+                try:
+                    payload, discarded, elapsed_ms = self._run_one(
+                        spec, ctx, parsed, timeout
+                    )
+                    if run is not None:
+                        run.end(
+                            outputs={
+                                "status": "ok",
+                                "attempts": attempts,
+                                "elapsed_ms": elapsed_ms,
+                                "discarded_post_cutoff": discarded,
+                            }
+                        )
+                    return payload, discarded, elapsed_ms, attempts
+                except Exception as exc:  # noqa: BLE001 - retry only executed handlers
+                    last_error = exc
+                    if run is not None:
+                        run.add_event(
+                            {"name": "retry", "attempt": attempt, "error": str(exc)}
+                        )
+                    if attempt > TOOL_RETRIES:
+                        break
+            cause = last_error or TimeoutError("overall investigation deadline reached")
+            if run is not None:
+                run.set(
+                    outputs={
+                        "status": "error",
+                        "attempts": max(1, attempts),
+                        "error": str(cause),
+                    }
+                )
+            raise _ToolAttemptsExhausted(cause, max(1, attempts))
 
     def _run_one(self, spec, ctx: ToolContext, parsed, timeout: float) -> tuple[Any, int, int]:
         if spec is None:

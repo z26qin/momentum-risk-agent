@@ -20,6 +20,13 @@ from src.agent.planner import Planner
 from src.agent.signals import no_meaningful_risk_signal
 from src.agent.specialists import BY_NAME, SCHEDULE, select_specialists
 from src.agent.synthesis import build_combined_pm_note, sanitize_text
+from src.agent.tracing import (
+    langsmith_extra_kwargs,
+    orchestrator_inputs,
+    orchestrator_outputs,
+    parent_run,
+    traceable,
+)
 from src.risk_state.models import InvestigationCase, RiskState
 from src.tools.registry import ToolRegistry
 
@@ -67,6 +74,12 @@ def run_orchestrated_investigation(
     return _run_sync(lambda: run_orchestrated_investigation_async(case, **kwargs))
 
 
+@traceable(
+    name="orchestrated_investigation",
+    run_type="chain",
+    process_inputs=orchestrator_inputs,
+    process_outputs=orchestrator_outputs,
+)
 async def run_orchestrated_investigation_async(
     case: InvestigationCase,
     max_steps: int = MAX_STEPS,
@@ -154,9 +167,11 @@ async def _gather(
 ) -> tuple[dict[str, AgentRunResult], list[dict]]:
     if not spawned:
         return {}, []
+    parent = parent_run()
     tasks = {
         name: asyncio.create_task(
-            asyncio.to_thread(_run_specialist, name, job), name=f"specialist-{name}"
+            asyncio.to_thread(_run_specialist, name, job, parent),
+            name=f"specialist-{name}",
         )
         for name in spawned
     }
@@ -193,9 +208,15 @@ async def _gather(
     return results, decisions
 
 
-def _run_specialist(name: str, job: _Job) -> AgentRunResult:
+def _run_specialist(name: str, job: _Job, parent=None) -> AgentRunResult:
     spec = BY_NAME[name]
     registry = job.registries.get(name) or spec.registry()
+    extra = langsmith_extra_kwargs(
+        parent=parent,
+        name=f"specialist_loop [{spec.focus}]",
+        metadata={"specialist": name, "focus": spec.focus},
+        tags=[name, spec.focus],
+    )
     return run_agent(
         job.case,
         max_steps=job.max_steps,
@@ -206,6 +227,7 @@ def _run_specialist(name: str, job: _Job) -> AgentRunResult:
         focus=spec.focus,
         monotonic=job.monotonic,
         run_id=f"{job.run_id}-{name[:3]}",
+        **extra,
     )
 
 
